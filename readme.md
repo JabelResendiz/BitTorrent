@@ -249,5 +249,31 @@ EL tracker responde con un documento `text/plain` que consiste en un diccionario
 - **peers (modelo binario) :** En lugar de usar el modelo de diccionario descrito arriba, el valor de `peers` puede ser una cadena que consiste en múltiplos de 6 bytes. Los primeros 4 bytes son las dirección IP y los últimos 2 bytes son el número de puerto. Todo en notación de red (big endian).
 
 
+Respuesta en modo "diccionario" (no compacta)
 
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 210
+
+d
+  8:intervali1800e
+  8:completei12e
+  10:incompletei34e
+  5:peersl
+    d2:ip13:192.168.1.210:porti6881e7:peer id20:-ABCD1234567890ABCDEe
+    d2:ip13:192.168.1.211:porti6882e7:peer id20:-XYZ9876543210XYZabcde
+  ee
+e
+```
+
+Respuesta en modo "compacto" (más usado en la práctica)
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 68
+
+d8:intervali1800e8:completei12e10:incompletei34e5:peers12:\xC0\xA8\x01\xD2\x1A\xE1\xC0\xA8\x01\xD3\x1A\xE2e
+```
 
