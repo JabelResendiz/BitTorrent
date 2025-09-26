@@ -1,6 +1,7 @@
 
 # BitTorrent
 
+[link wiki](https://wiki.theory.org/BitTorrentSpecification)
 ## Metainfo File (.torrent)
 Los archivos `.torrent` están bencodeados, que es un formato simple para codificar información (no en texto plano), más fácil que parsear que un XML y un JSON. 
 
@@ -165,14 +166,14 @@ e
 ---
 
 
-# Tracker
+## Tracker
 
 - El **tracker** es un servicio HTTP/HTTPS que responde a sus solicitudes **HTTP GET**. Las solicitudes incluyen métricas de los clientes que ayudan al tracker a mantener estadísticas generales sobre el torrent. 
 
 - La respeta incluye una **lista de pares (peers)** que ayuda al cliente a participar en el torrent.
 
 
-## Parámetros de la solicitud del cliente al tracker
+### Parámetros de la solicitud del cliente al tracker
 
 Los parámetros usados en la solicitud **GET** del cliente -> tracker son los siguientes :
 
@@ -223,7 +224,7 @@ User-Agent: MiBitTorrentCliente/1.0
 Connection: close
 ```
 
-## Parámetros de la respuesta del tracker
+### Parámetros de la respuesta del tracker
 
 EL tracker responde con un documento `text/plain` que consiste en un diccionario bencodeado con las siguientes claves:
 
