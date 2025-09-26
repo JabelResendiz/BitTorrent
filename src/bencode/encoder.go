@@ -54,7 +54,8 @@ func (encoder * encoder) encoderDictionary(v  map[string]interface{}) {
 	i:=0
 
 	for key := range v {
-		list[i++] = key
+		list[i] = key
+		i++
 	}
 
 	list.Sort()
