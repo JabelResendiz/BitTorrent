@@ -15,15 +15,99 @@ type decoder struct {
 	bufio.Reader
 }
 
+// Read a number from the decoder (stream) until a given byte (like ':' or 'e')
+func (decoder * decoder) decoderIntU(until byte) (interface {}, error){
+	res, err := decoder.ReadSlice(until)
+
+	if err != nil {
+		return nil, err
+	}
+
+	str := string(res[:len(res)-1])
 
 
+	if value, err := strconv.ParseInt(str, 10,64) ; err == nil {
+		return value,nil
+	} else if value, err := strconv.ParseUint(str,10,64) ; err == nil {
+		return value, nil
+	}
+
+	return nil, err
+}
+
+func (decoder * decoder) decoderInt() (interface{}, error){
+	return decoder.decoderIntU('e')
+}
+
+func (decoder * decoder) decoderList() ([]interface{}, error){
+	var list []interface{}
+
+	for {
+		ch, err := decoder.ReadByte()
+
+		if err != nil {
+			return nil, err
+		}
+
+		if ch == 'e' {
+			break
+		}
+
+		item , err := decoder.decoderInterfaceType(ch)
+
+		if err != nil {
+			return nil, err
+		}
+
+		list = append(list,item)
+	}
+
+	return list, nil
+}
 
 func (decoder * decoder) decoderInterfaceType(id byte) (interface{}, error) {
 
+	switch id {
+	case 'i' :
+		return decoder.decoderInt()
+	case 'l':
+		return decoder.decoderList()
+	case 'd':
+		return decoder.decoderDictionary()
+	default:
+		if err := decoder.UnreadByte() ; err != nil {
+			return nil, err
+		}
+
+		return decoder.decoderString()
+	}
+
+	// return nil, nil
 }
 
 func (decoder * decoder) decoderString() ( string, error){
 
+	len, err := decoder.decoderIntU(':')
+
+	if err != nil {
+		return "", err
+	}
+
+	var stringLength int64
+	var ok bool
+
+	if stringLength, ok := len.(int64) ; !ok {
+		return "", errors.New("string length maay not exceed the size of int64")
+	}
+
+	if stringLength < 0 {
+		return "", errors.New("string length can not be a negative number")
+	}
+
+	buffer := make([]byte, stringLength)
+	_, err = io.ReadFull(decoder,buffer)
+
+	return string(byffer), err
 }
 
 
@@ -50,7 +134,7 @@ func (decoder * decoder) decoderDictionary() (map[string]interface{}, error) {
 			return nil, err
 		}
 
-		dict[key] = item
+		dict[key] = interf
 
 		nextbyte, err := decoder.ReadByte()
 		if err != nil {
