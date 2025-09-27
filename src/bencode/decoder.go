@@ -96,7 +96,7 @@ func (decoder * decoder) decoderString() ( string, error){
 	var stringLength int64
 	var ok bool
 
-	if stringLength, ok := len.(int64) ; !ok {
+	if stringLength, ok = len.(int64) ; !ok {
 		return "", errors.New("string length maay not exceed the size of int64")
 	}
 
@@ -107,7 +107,7 @@ func (decoder * decoder) decoderString() ( string, error){
 	buffer := make([]byte, stringLength)
 	_, err = io.ReadFull(decoder,buffer)
 
-	return string(byffer), err
+	return string(buffer), err
 }
 
 
@@ -157,7 +157,7 @@ func Decode(reader io.Reader) (map[string]interface{}, error){
 	if firstbyte, err := decoder.ReadByte(); err != nil {
 		return make (map[string]interface{}), nil
 	}else if firstbyte != 'd' {
-		return nil , error.New("bencode data must begin with a dictionary")
+		return nil , errors.New("bencode data must begin with a dictionary")
 	}
 
 	return decoder.decoderDictionary()
