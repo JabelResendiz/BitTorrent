@@ -49,7 +49,7 @@ func (encoder * encoder)encoderList(v [] interface{}){
 
 func (encoder * encoder) encoderDictionary(v  map[string]interface{}) {
 
-	list := make(sort.StringSlice, len(dict))
+	list := make(sort.StringSlice, len(v))
 
 	i:=0
 
