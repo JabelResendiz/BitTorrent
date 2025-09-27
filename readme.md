@@ -168,6 +168,24 @@ e
 
 ## Tracker
 
+El tracker no guarda “quién tiene cada pieza del archivo”, sino quién está participando en ese torrent en general.
+
+📌 En concreto:
+
+El torrent file se identifica por su info_hash (SHA1 del diccionario info).
+
+Cuando un cliente hace announce al tracker, le dice:
+
+“Estoy en el swarm del torrent con info_hash = X”
+
+Y pasa su peer_id, ip, port, y su estado (started, stopped, completed).
+
+El tracker anota: “Peer Y está en el torrent X”.
+
+Opcionalmente, lleva un conteo de cuántos peers están completos (seeders) y cuántos no (leechers).
+
+Pero no sabe si tienes la pieza #5 o la #200. Eso lo sabe solo cada peer, y te lo dice luego vía bitfield o mensajes have.
+
 - El **tracker** es un servicio HTTP/HTTPS que responde a sus solicitudes **HTTP GET**. Las solicitudes incluyen métricas de los clientes que ayudan al tracker a mantener estadísticas generales sobre el torrent. 
 
 - La respeta incluye una **lista de pares (peers)** que ayuda al cliente a participar en el torrent.
