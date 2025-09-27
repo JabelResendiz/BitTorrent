@@ -1,0 +1,33 @@
+
+
+version: "3.8"
+services:
+  tracker:
+    build: ./tracker
+    container_name: tracker
+    ports:
+      - "8080:8080"
+    networks.
+      - torrent-net
+    
+  peer1:
+    build: ./client
+    container_name: peer1
+    depends_on:
+      - tracker
+    networks:
+      - torrent-net
+
+  peer2:
+    build: ./client
+    container_name: peer2
+    depends_on:
+      - tracker
+    networks:
+      - torrent-net
+
+
+
+networks:
+  torrent-net:
+    driver: bridge
