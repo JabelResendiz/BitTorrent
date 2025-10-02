@@ -168,6 +168,24 @@ e
 
 ## Tracker
 
+El tracker no guarda “quién tiene cada pieza del archivo”, sino quién está participando en ese torrent en general.
+
+📌 En concreto:
+
+El torrent file se identifica por su info_hash (SHA1 del diccionario info).
+
+Cuando un cliente hace announce al tracker, le dice:
+
+“Estoy en el swarm del torrent con info_hash = X”
+
+Y pasa su peer_id, ip, port, y su estado (started, stopped, completed).
+
+El tracker anota: “Peer Y está en el torrent X”.
+
+Opcionalmente, lleva un conteo de cuántos peers están completos (seeders) y cuántos no (leechers).
+
+Pero no sabe si tienes la pieza #5 o la #200. Eso lo sabe solo cada peer, y te lo dice luego vía bitfield o mensajes have.
+
 - El **tracker** es un servicio HTTP/HTTPS que responde a sus solicitudes **HTTP GET**. Las solicitudes incluyen métricas de los clientes que ayudan al tracker a mantener estadísticas generales sobre el torrent. 
 
 - La respeta incluye una **lista de pares (peers)** que ayuda al cliente a participar en el torrent.
@@ -278,3 +296,45 @@ Content-Length: 68
 d8:intervali1800e8:completei12e10:incompletei34e5:peers12:\xC0\xA8\x01\xD2\x1A\xE1\xC0\xA8\x01\xD3\x1A\xE2e
 ```
 
+
+### Convención de Tracker Scrape
+
+Los `trackers` (opcional) soportan otra forma de petición , que consulta el estado de un `torrent` en particular (o de todos los `torrents`) que el tracker este gestionando. A eso se le conoce como `"la página de scrape"` porque automatiza el proceso, de otro modo tedioso, la página de estadísticas del tracker.
+
+- Es importante para cuando debamos hacer un interfaz gráfica , consola con info detallada
+- Optimizaciones de decisiones internas (clientes más avanzados), antes de unirte a un torrent, se pregunta al tracker si vale la pena entrar, así evitas descargar un `torrent` con 0 seeders.
+
+La URL del `scrape` también se utiliza el método HTTP GET , similar al descrito anteriormente. Sin embargo, la URL base es diferente. Para obtenerla :
+
+1. Comenzar con la URL de announce
+2. Localizar la última '/' en ella
+3. Si el texto inmediatamente después de ese '/' no es un 'announce', se considerará que el tracker no soporta la convención scrape
+4. Si sí lo es, se sustituye 'announce' por 'scrape' para obtener la URL del scrape
+
+La URL de `scrape` puede complementarse con el parámetro opcional `info_hash`, un valor de 20 bytes. Esto restringe el informe del tracker a ese torrent en particular (o de lo contrario, devuelve estadísticas de todos los torrents que el tracker gestiona, no es muy recomendable porque ocupa más carga y ancho de banda). 
+
+La respuesta de este método HTTP GET es un documento `text/plain` que consiste en un diccionario codificado en bencode, con las siguientes claves:
+
+- **files:** un diccioanrio que contiene un par clave/valor por cada torrent del que existan estadísticas
+  - Cada clave es un `info_hash` binario de 20 bytes
+  - El valor asociado es otro diccionario con :
+    - **complete:** numero de pares con el archivo completo (semillas o seeders)(entero)
+    - **downloaded:** numero total de veces que el tracker registró una finalización(`event= completed`, es decir un cliente terminó de descargar el torrent)
+    - **incomplete:** numero de pares sin el archivo completo(leechers)(entero)
+    -**name(opcional):** nombre interno del torrent, especificado por el campo `name` en la sección `info` del archivo `.torrent`
+
+#### Respuesta del tracker al scrape
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 68
+
+d5:filesd20:....................(info_hash)d8:completei5e10:downloadedi50e10:incompletei10eeee
+```
+
+#### Solicitud del scrape
+
+```http
+GET /scrape?info_hash=%12%34%56%78... HTTP/1.1
+Host: tracker.ejemplo.com:6969
+```
