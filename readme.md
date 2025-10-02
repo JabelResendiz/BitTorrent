@@ -338,3 +338,55 @@ d5:filesd20:....................(info_hash)d8:completei5e10:downloadedi50e10:inc
 GET /scrape?info_hash=%12%34%56%78... HTTP/1.1
 Host: tracker.ejemplo.com:6969
 ```
+
+
+## Peer wire protocol (TCP)
+
+- un cliente debe mantener información de estado para cada conexión que tenga con un peer remoto.
+  - **chocked:** indica si el peer remoto ha "estrangulado" a este cliente. Cuando sucede , le notifica que no responderá a solicitudes hasta que sea desestrangulado. El cliente no debe enviar solicitudes de bloques y debe considerar todas las solicitudes pendientes como descartadas por el peer remoto
+  - **interested:** indica si el peer remoto está interesado en algo que este cliente ofrece. Es una notificación de que el peer remoto empezará a pedir bloques cuando el cliente deje de estrangularlo
+  - ***am_choking:*** este cliente está estrangulando al peer (inicial = 1)
+  - ***am_interested:*** este cliente está interesaod en el peer (inicial = 0)
+  - ***peer_choking:*** peer está estrangulando al cliente (inicial = 1)
+  - ***peer_interested:*** peer está interesado en este cliente (peer_interested = 0)
+  - un bloque se **descarga** cuando el (am_interested = 1) y (peer_choking=0)
+  - un bloque se **sube** cuando el (peer_interested = 1) y (am_choking = 0)
+
+### Handshake 
+> es un mensaje obligatorio y debe ser el primer mensaje transmitido por el cliente. Tiene una longitud de **(49 +  len(pstr)) bytes**.
+
+```php-template
+handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
+```
+- **pstrlen:** longitud de la cadena `pstr` , como un bytes bruto único
+- **pstr:** identificador de cadena del protocolo
+- **reserved:** 8 bytes reservados. Todas las implementaciones actuales usan 0. Cada bit en estos bytes puede usarse para cambiar el comportameinto del protocolo
+- **info_hash:** Es el mismo `info_hash` que se transmite en las solicitudes al tracker (20 bytes)
+- **peer_id:** cadena de 20 bytes usadas como ID único del cliente (el mismo que se transmite en las solicitudes al tracker)
+- en la versión 1.0 del protcolo BitTorrent, `pstrlen=19` y `pstr="BitTorrent protocol"`
+
+
+- el iniciador de la conexión debe transmitir su `handshake` inmediatamente. EL receptor puede esperar el `handshake` del inciador si puede servir múltiples torrent simultaneamente. Sin embargo, el receptor debe responder tan pronto vea la parte `info_hash` del `handshake` (el peer id presumiblemente se enviará después de que el receptro envíe su `handshake`). La función de verificación NAT del tracker no envía el campo `peer_id` del handshake.
+- Si uyn cliente recibe un `handshake` con un `info_hash` que no está sirviendo actualmente , debe cerrar la conexión
+- Si el iniciador de la conexión recibe un `handshake` cuyo `peer_id` no coincide con el peer_id esperado , debe cerrar la conexión. Es decir se espera que el `peer_id` drecibido por el tracker coincida con el del handshake.
+
+### Tipo de datos
+todos los enteros en el protocolo de peer por cable se codifican como valores de cuatro bytes en **big_endian**. Esto incluye el prefijo de longitud en todos los mensajes que vienen después del handshake
+
+### Flujo de Mensajes
+El protocolo consiste en un handshake inicial. Despues , los peers se comunican mediante un intercambio de mensajes prefijados con su longitud. El prefijo de longitud es un entero.
+
+### Mensajes
+> Todos los mensajes restantes en el protocolo toman la forma de `<prefijo de longitud><ID de mensaje><carga útil>`. El prefijo de longitud es un valor de 4 bytes en big-endian. EL ID del mensaje es un solo byte decimal. La carga útil depende del mensaje
+
+- ***keep-alive (len=0000):*** mensaje de 0 bytes, especificado con el prefijo de longitud en 0. No tiene ID de mensaje ni carga útil. Los peers pueden cerrar una conexion si no reciben mensajes (keep-alive o cualquier otro) durante un período de tiempo , por lo que se debe enviar un keep-alive para mantener la conexión viva si no se ha enviado ningún comando durante un tiempo determinado. Suele ser de 2 minutos.
+
+- ***choke (<len=0001><id=0>):*** el mensaje choke tiene longitud fija y no tiene carga útil
+
+- ***unchoke (<len= 0001><id=1>):*** tiene longitud fija y sin carga
+
+- ***interested (<len=0001><id=2>):*** lo mismo que los otros dos
+
+- ***not interested (<len=00001><id=3>):*** lo mismo
+
+- ***have (<len= 00005><id=4><piece index>):*** longitud fija. La carga útil es el índice basado en cero de un piece que acab de ser descargado y verificado mediante hash
