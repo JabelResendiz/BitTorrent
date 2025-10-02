@@ -11,11 +11,12 @@ import (
 	"net/url"
 	"os"
 	"src/bencode"
+	"strings"
 )
 
 func main(){
 
-	torrent, err := op.Open("test.torrent")
+	torrent, err := os.Open("test.torrent")
 
 	if err != nil {
 		panic(err)
@@ -39,9 +40,15 @@ func main(){
 		length = v
 	}
 
+	var buf strings.Builder
+	for _,b := range infoHash {
+		buf.WriteString(fmt.Sprintf("%%%02X",b))
+	}
+
+	infoHashEncoded := buf.String()
+
 	peerId := "-JC0001-123456789012"
 	params := url.Values{
-		"info_hash": []string{string(infoHash[:])},
 		"peer_id":  []string{peerId},
 		"port": []string{"6881"},
 		"uploaded" : []string{"0"},
@@ -49,10 +56,12 @@ func main(){
 		"left": []string{fmt.Sprintf("%d", length)},
 		"compact": []string{"1"},
 		"event": []string{"started"},
+		"numwant": []string{"50"},
+    	"key":   []string{"jc12345"},
 	}
 
 
-	fullURL := announce + "?" + params.Encode()
+	fullURL := announce + "?info_hash=" +infoHashEncoded+"&"+ params.Encode()
 	fmt.Println("Tracker request: ", fullURL)
 
 	resp, err := http.Get(fullURL)
