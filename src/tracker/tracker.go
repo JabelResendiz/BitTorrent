@@ -16,6 +16,7 @@ type Peer struct {
 	IP        string    `json:"ip"` // IPv4 textual (ej.: 192.168.1.10)
 	Port      uint16    `json:"port"`
 	LastSeen  time.Time `json:"last_seen"`
+	Completed bool      `json:"completed"` // true si left==0 reportado
 }
 
 // Swarm: conjunto de peers de un mismo torrent (info_hash)
@@ -62,7 +63,7 @@ func (t *Tracker) getOrCreateSwarm(infoHashHex string) *Swarm {
 // Add or update peer
 // AddPeer da de alta o actualiza (upsert) un peer dentro del swarm de infoHashHex.
 // Actualiza IP, puerto y LastSeen al momento now.
-func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, ip net.IP, port uint16, now time.Time) {
+func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, ip net.IP, port uint16, completed bool, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -75,6 +76,7 @@ func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, ip net.IP, port uint16,
 	p.IP = ip.String()
 	p.Port = port
 	p.LastSeen = now
+	p.Completed = completed || p.Completed
 }
 
 // Remove peer
@@ -132,6 +134,23 @@ func (t *Tracker) GC(now time.Time) (expired int) {
 		}
 		if len(sw.Peers) == 0 {
 			delete(t.Torrents, ih)
+		}
+	}
+	return
+}
+
+// CountPeers retorna el número de seeders (complete) y leechers (incomplete)
+// en el swarm identificado por infoHashHex.
+func (t *Tracker) CountPeers(infoHashHex string) (complete, incomplete int) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if sw := t.Torrents[infoHashHex]; sw != nil {
+		for _, p := range sw.Peers {
+			if p.Completed {
+				complete++
+			} else {
+				incomplete++
+			}
 		}
 	}
 	return

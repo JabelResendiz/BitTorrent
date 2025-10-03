@@ -44,6 +44,23 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parámetros adicionales que el cliente envía; se aceptan y en parte se usan
+	uploaded, _ := strconv.ParseInt(vals.Get("uploaded"), 10, 64)
+	downloaded, _ := strconv.ParseInt(vals.Get("downloaded"), 10, 64)
+	left, _ := strconv.ParseInt(vals.Get("left"), 10, 64)
+	if uploaded < 0 || downloaded < 0 || left < 0 {
+		t.failure(w, "invalid counters")
+		return
+	}
+	event := vals.Get("event")
+	_ = vals.Get("compact") // leemos pero siempre respondemos en formato compacto IPv4
+	numwant := t.MaxPeersResp
+	if nw, err := strconv.Atoi(vals.Get("numwant")); err == nil && nw >= 0 {
+		if nw < numwant {
+			numwant = nw
+		}
+	}
+
 	ip := clientIP(r, vals.Get("ip"))
 	if ip == nil || ip.To4() == nil {
 		t.failure(w, "ipv4 required")
@@ -56,18 +73,28 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("announce from %s ih=%s pid=%s port=%d", ip.String(), infoHex[:8], peerHex[:8], port64)
 
-	// Upsert peer and persist
-	_ = t.SaveOnChange(func() {
-		t.AddPeer(infoHex, peerHex, ip, uint16(port64), now)
-	})
+	// Determinar si el peer es seeder
+	completed := left == 0
+
+	// event handling: stopped => eliminar; completed/started/empty => alta/refresh
+	switch event {
+	case "stopped":
+		_ = t.SaveOnChange(func() { t.RemovePeer(infoHex, peerHex) })
+	default:
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, ip, uint16(port64), completed, now) })
+	}
 
 	// Build peer list excluding requester
-	peers := t.GetPeers(infoHex, peerHex, t.MaxPeersResp)
-	compact := compactPeers(peers)
+	peers := t.GetPeers(infoHex, peerHex, numwant)
+	compactResp := compactPeers(peers)
 
+	// Contadores de seeds/leechers (complete/incomplete) para compatibilidad
+	comp, incomp := t.CountPeers(infoHex)
 	reply := map[string]interface{}{
-		"interval": int64(t.Interval.Seconds()),
-		"peers":    compact,
+		"interval":   int64(t.Interval.Seconds()),
+		"peers":      compactResp,
+		"complete":   int64(comp),
+		"incomplete": int64(incomp),
 	}
 	data := bencode.Encode(relySafe(reply))
 	w.Header().Set("Content-Type", "application/x-bittorrent")
