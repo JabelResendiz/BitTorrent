@@ -31,6 +31,8 @@ func main() {
 
 	// Registra el handler /announce del tracker.
 	http.HandleFunc("/announce", t.AnnounceHandler)
+	// Registra el handler /scrape del tracker.
+	http.HandleFunc("/scrape", t.ScrapeHandler)
 
 	// GC loop
 	// Bucle en background que expira peers inactivos periódicamente y persiste
