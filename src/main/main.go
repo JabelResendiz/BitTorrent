@@ -1,18 +1,15 @@
-
-
-
 package main
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"src/bencode"
 )
 
-
-func main(){
+func main() {
 	torrent := map[string]interface{}{
-		"announce": "http://tracker.example.com/announce",
+		// Apunta al tracker local por defecto
+		"announce": "http://localhost:8080/announce",
 		"info": map[string]interface{}{
 			"name":         "archivo.txt",
 			"length":       int64(12345),
@@ -23,7 +20,7 @@ func main(){
 
 	data := bencode.Encode(torrent)
 
-	err := os.WriteFile("test.torrent", data,0644)
+	err := os.WriteFile("test.torrent", data, 0644)
 
 	if err != nil {
 		panic(err)
@@ -31,19 +28,15 @@ func main(){
 
 	fmt.Println("Archivo test.torrent creado con exito")
 
-
-
 	file, err := os.Open("test.torrent")
 
 	if err != nil {
 		panic(err)
 	}
 
-
 	defer file.Close()
 
-
-	torrentData,err  := bencode.Decode(file)
+	torrentData, err := bencode.Decode(file)
 
 	if err != nil {
 		panic(err)
