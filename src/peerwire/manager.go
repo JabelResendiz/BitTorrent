@@ -1,27 +1,26 @@
-
-
 package peerwire
 
 import (
-	"fmt"
+	"bytes"
 	"encoding/binary"
+	"fmt"
 )
-func(p* PeerConn) ReadLoop() {
+
+func (p *PeerConn) ReadLoop() {
 	for {
 		id, payload, err := p.ReadMessage()
 		if err != nil {
 			fmt.Println("Error con peer:", err)
 			p.Close()
-			return 
+			return
 		}
 
-
-		p.handleMessage(id,payload)
+		p.handleMessage(id, payload)
 	}
 }
 
 // actualiza estado segun el tipo de mensaje
-func (p* PeerConn) handleMessage(id byte, payload[]byte) {
+func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	switch id {
 	case MsgChoke:
 		p.PeerChoking = true
@@ -45,7 +44,7 @@ func (p* PeerConn) handleMessage(id byte, payload[]byte) {
 	case MsgInterested:
 		p.PeerInterested = true
 	case MsgNotInterested:
-		p.PeerInterested= false
+		p.PeerInterested = false
 	case MsgHave:
 		index := binary.BigEndian.Uint32(payload)
 		fmt.Println("Peer tiene pieza:", index)
@@ -54,7 +53,7 @@ func (p* PeerConn) handleMessage(id byte, payload[]byte) {
 	case MsgPort:
 		fmt.Println("Puerto abierto")
 	case MsgPiece:
-		if len(payload)< 8 {
+		if len(payload) < 8 {
 			fmt.Println("Piece demasiado corta")
 			return
 		}
@@ -65,6 +64,6 @@ func (p* PeerConn) handleMessage(id byte, payload[]byte) {
 	case 255:
 		//ignorar
 	default:
-		fmt.Println("Mensaje desconocido",id)
+		fmt.Println("Mensaje desconocido", id)
 	}
 }
