@@ -27,6 +27,21 @@ func (p* PeerConn) handleMessage(id byte, payload[]byte) {
 		p.PeerChoking = true
 	case MsgUnchoke:
 		p.PeerChoking = false
+		fmt.Println("Peer te unchokeo. Enviando request de prueba...")
+
+		// Enviar un request de bloque fake (offset 0, length 16384)
+		index := uint32(0)
+		begin := uint32(0)
+		length := uint32(16384) // 16KB del bloque
+		req := new(bytes.Buffer)
+		binary.Write(req, binary.BigEndian, index)
+		binary.Write(req, binary.BigEndian, begin)
+		binary.Write(req, binary.BigEndian, length)
+
+		if err := p.SendMessage(MsgRequest, req.Bytes()); err != nil {
+			fmt.Println("Error enviando request:", err)
+		}
+
 	case MsgInterested:
 		p.PeerInterested = true
 	case MsgNotInterested:
@@ -38,6 +53,15 @@ func (p* PeerConn) handleMessage(id byte, payload[]byte) {
 		fmt.Println("Bitfield inicial recibido")
 	case MsgPort:
 		fmt.Println("Puerto abierto")
+	case MsgPiece:
+		if len(payload)< 8 {
+			fmt.Println("Piece demasiado corta")
+			return
+		}
+		index := binary.BigEndian.Uint32(payload[0:4])
+		begin := binary.BigEndian.Uint32(payload[4:8])
+		block := payload[8:]
+		fmt.Printf("Recibido block de pieza %d, offset %d, tamaño %d bytes\n", index, begin, len(block))
 	case 255:
 		//ignorar
 	default:
