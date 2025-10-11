@@ -19,9 +19,6 @@ Esto lanzará e tracker HTTP escuchando en `localhost:8080`
 
 Si todo va bien, se debe ver algo como:
 
-
-- Abre otra terminal y ejecutar:
-
 ```pgsql
 2025/10/10 23:41:15 tracker listening on :8080 interval=1800s data=tracker_data.json
 ```

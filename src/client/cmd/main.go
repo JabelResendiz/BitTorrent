@@ -110,18 +110,27 @@ func main() {
 			pc, err := peerwire.NewPeerConn(addr,infoHash,peerIdBytes)
 
 			if err != nil{
-				panic(err)
+				fmt.Println("Error creando PeerConn:", err)
+				continue
 			}
 
 			defer pc.Close()
-
+			
+			// Handshake
 			if err := pc.Handshake(); err != nil {
 				panic(err)
 			}
 
 			fmt.Println("Conectado al peer, handshake OK")
 
+			//enviar el Interested
 			pc.SendMessage(peerwire.MsgInterested,nil)
+
+			// iniciar loop de lectura en paralelo
+			go pc.ReadLoop()
 		}
 	}
+
+	// mantener main corriendo meintras llegan mensajes
+	select {}
 }
