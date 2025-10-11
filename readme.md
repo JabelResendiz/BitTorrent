@@ -1,7 +1,46 @@
 
 # BitTorrent
 
+
+
 [link wiki](https://wiki.theory.org/BitTorrentSpecification)
+## Requisitos
+
+## Run
+
+### 🛰️ Run Tracker
+Abre una terminal en la raíz del proyecto(src) y ejecuta:
+
+```bash
+go run tracker/cmd/main.go
+```
+
+Esto lanzará e tracker HTTP escuchando en `localhost:8080`
+
+Si todo va bien, se debe ver algo como:
+
+
+- Abre otra terminal y ejecutar:
+
+```pgsql
+2025/10/10 23:41:15 tracker listening on :8080 interval=1800s data=tracker_data.json
+```
+### 💻 Run Client
+Abre otra terminal y ejecutar:
+
+```bash
+go run client/cmd/main.go
+```
+
+La salida esperada será algo como :
+
+```perl
+Tracker request:  http://localhost:8080/announce?info_hash=%BA%4E...
+Tracker responde:  map[complete:0 incomplete:1 interval:1800 peers:]
+```
+
+En `tracker_data.json` se pueden ver los peers registrados por el tracker.
+
 ## Metainfo File (.torrent)
 Los archivos `.torrent` están bencodeados, que es un formato simple para codificar información (no en texto plano), más fácil que parsear que un XML y un JSON. 
 
