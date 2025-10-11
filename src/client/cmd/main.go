@@ -1,8 +1,13 @@
+
+// client/cmd/main.go
+
 package main
 
 import (
 	"crypto/sha1"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +16,12 @@ import (
 	"src/bencode"
 	"strings"
 )
+
+func generatePeerId() string {
+	buf := make([]byte,6)
+	_, _ = rand.Read(buf)
+	return fmt.Sprintf("-JC0001-%s",hex.EncodeToString(buf))
+}
 
 func main() {
 
@@ -44,7 +55,8 @@ func main() {
 
 	infoHashEncoded := buf.String()
 
-	peerId := "-JC0001-123456789012"
+	//peerId := "-JC0001-123456789012"
+	peerId := generatePeerId()
 	params := url.Values{
 		"peer_id":    []string{peerId},
 		"port":       []string{"6881"},
