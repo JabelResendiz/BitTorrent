@@ -15,6 +15,7 @@ import (
 	"os"
 	"src/bencode"
 	"strings"
+	"src/peerwire"
 )
 
 func generatePeerId() string {
@@ -57,6 +58,12 @@ func main() {
 
 	//peerId := "-JC0001-123456789012"
 	peerId := generatePeerId()
+
+	// hostIP := os.Getenv("MY_PEER_IP")
+	// if hostIP == "" {
+	// 	hostIP = "127.0.0.1"
+	// }
+
 	params := url.Values{
 		"peer_id":    []string{peerId},
 		"port":       []string{"6881"},
@@ -67,6 +74,7 @@ func main() {
 		"event":      []string{"started"},
 		"numwant":    []string{"50"},
 		"key":        []string{"jc12345"},
+		//"ip":         []string{hostIP},
 	}
 
 	fullURL := announce + "?info_hash=" + infoHashEncoded + "&" + params.Encode()
@@ -95,6 +103,25 @@ func main() {
 			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
 			port := binary.BigEndian.Uint16(data[i+4 : i+6])
 			fmt.Printf("Peer: %s:%d\n", ip, port)
+			
+			addr := fmt.Sprintf("%s:%d", ip, port)
+			var peerIdBytes [20]byte
+			copy(peerIdBytes[:],[]byte(peerId))
+			pc, err := peerwire.NewPeerConn(addr,infoHash,peerIdBytes)
+
+			if err != nil{
+				panic(err)
+			}
+
+			defer pc.Close()
+
+			if err := pc.Handshake(); err != nil {
+				panic(err)
+			}
+
+			fmt.Println("Conectado al peer, handshake OK")
+
+			pc.SendMessage(peerwire.MsgInterested,nil)
 		}
 	}
 }
