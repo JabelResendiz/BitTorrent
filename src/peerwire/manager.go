@@ -64,8 +64,45 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	case MsgHave:
 		index := binary.BigEndian.Uint32(payload)
 		fmt.Println("Peer tiene pieza:", index)
+		// update remote bitfield lazily
+		if p.manager != nil && p.manager.Store() != nil {
+			n := p.manager.Store().NumPieces()
+			if int(index) < n {
+				// ensure remoteBF allocated
+				exp := (n + 7) / 8
+				if len(p.remoteBF) != exp {
+					p.remoteBF = make([]byte, exp)
+				}
+				byteIdx := int(index) / 8
+				bit := 7 - (int(index) % 8)
+				p.remoteBF[byteIdx] |= (1 << uint(bit))
+			}
+		}
 	case MsgBitfiled:
+		// Validate and store remote bitfield
+		if p.manager != nil && p.manager.Store() != nil {
+			exp := (p.manager.Store().NumPieces() + 7) / 8
+			if len(payload) != exp {
+				fmt.Println("Bitfield inválido: tamaño", len(payload), "esperado", exp)
+				return
+			}
+		}
+		p.UpdateRemoteBitfield(payload)
 		fmt.Println("Bitfield inicial recibido")
+		// Decide si estamos interesados: el remoto tiene alguna pieza que nos falte
+		if p.manager != nil && p.manager.Store() != nil {
+			haveInterest := false
+			n := p.manager.Store().NumPieces()
+			for i := 0; i < n; i++ {
+				if p.RemoteHasPiece(i) && !p.manager.Store().HasPiece(i) {
+					haveInterest = true
+					break
+				}
+			}
+			if haveInterest {
+				p.SendMessage(MsgInterested, nil)
+			}
+		}
 	case MsgPort:
 		fmt.Println("Puerto abierto")
 	case MsgPiece:
