@@ -1,29 +1,27 @@
-
-
 package peerwire
 
 import (
-	"encoding/binary"
-	"io"
 	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
 )
 
 const (
-	MsgChoke = 0
-	MsgUnchoke = 1
-	MsgInterested = 2
+	MsgChoke         = 0
+	MsgUnchoke       = 1
+	MsgInterested    = 2
 	MsgNotInterested = 3
-	MsgHave = 4
-	MsgBitfiled = 5
-	MsgRequest = 6
-	MsgPiece = 7
-	MsgCancel = 8
-	MsgPort = 9
-) 
-
+	MsgHave          = 4
+	MsgBitfiled      = 5
+	MsgRequest       = 6
+	MsgPiece         = 7
+	MsgCancel        = 8
+	MsgPort          = 9
+)
 
 // funcion que envia un mensaje generico del protocolo
-func (p* PeerConn) SendMessage (id byte, payload []byte) error {
+func (p *PeerConn) SendMessage(id byte, payload []byte) error {
 	length := uint32(1 + len(payload))
 	buf := new(bytes.Buffer)
 
@@ -59,7 +57,7 @@ func (p* PeerConn) SendMessage (id byte, payload []byte) error {
 //   }
 
 // funcion para leer mesnaje del peer
-func (p* PeerConn) ReadMessage() (id byte,payload []byte, err error){
+func (p *PeerConn) ReadMessage() (id byte, payload []byte, err error) {
 	var length uint32
 	if err := binary.Read(p.Conn, binary.BigEndian, &length); err != nil {
 		return 0, nil, err
@@ -75,4 +73,20 @@ func (p* PeerConn) ReadMessage() (id byte,payload []byte, err error){
 	}
 
 	return data[0], data[1:], nil
+}
+
+// SendHave sends a HAVE message for the given piece index
+func (p *PeerConn) SendHave(index uint32) error {
+	payload := make([]byte, 4)
+	binary.BigEndian.PutUint32(payload, index)
+	fmt.Println("Enviando HAVE de pieza", index)
+	return p.SendMessage(MsgHave, payload)
+}
+
+// SendBitfield sends the current bitfield (if non-empty)
+func (p *PeerConn) SendBitfield(bits []byte) error {
+	if len(bits) == 0 {
+		return nil
+	}
+	return p.SendMessage(MsgBitfiled, bits)
 }

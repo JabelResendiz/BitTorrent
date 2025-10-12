@@ -33,3 +33,4 @@ go.work.sum
 
 # DB files
 tracker_data.json
+download.data

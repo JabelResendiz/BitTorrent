@@ -61,6 +61,12 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		begin := binary.BigEndian.Uint32(payload[4:8])
 		block := payload[8:]
 		fmt.Printf("Recibido block de pieza %d, offset %d, tamaño %d bytes\n", index, begin, len(block))
+		// if attached to a manager with a store, persist block
+		if p.manager != nil && p.manager.Store() != nil {
+			if _, err := p.manager.Store().WriteBlock(int(index), int(begin), block); err != nil {
+				fmt.Println("Error guardando bloque:", err)
+			}
+		}
 	case 255:
 		//ignorar
 	default:
