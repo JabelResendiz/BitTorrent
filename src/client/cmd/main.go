@@ -125,15 +125,60 @@ func main() {
 		store.SetExpectedHashes(expectedHashes)
 	}
 
+	// Enviar announce stopped al salir para limpiar del tracker
+	defer func() {
+		// calcular left según piezas completas en store
+		left := length
+		if store != nil {
+			var have int64
+			num := store.NumPieces()
+			for i := 0; i < num; i++ {
+				if store.HasPiece(i) {
+					// suma tamaño real de la pieza i
+					if i == num-1 {
+						have += length - int64(store.PieceLength())*int64(num-1)
+					} else {
+						have += int64(store.PieceLength())
+					}
+				}
+			}
+			if have > left {
+				have = left
+			}
+			left = length - have
+		}
+		stopParams := url.Values{
+			"peer_id":    []string{peerId},
+			"port":       []string{"6881"},
+			"uploaded":   []string{"0"},
+			"downloaded": []string{fmt.Sprintf("%d", length-left)},
+			"left":       []string{fmt.Sprintf("%d", left)},
+			"compact":    []string{"1"},
+			"event":      []string{"stopped"},
+			"numwant":    []string{"0"},
+			"key":        []string{"jc12345"},
+		}
+		stopURL := announce + "?info_hash=" + infoHashEncoded + "&" + stopParams.Encode()
+		_, _ = http.Get(stopURL)
+	}()
+
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
 		data := []byte(peersRaw)
+
+		// deduplicar ip:port
+		seen := make(map[string]struct{})
 
 		for i := 0; i < len(data); i += 6 {
 			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
 			port := binary.BigEndian.Uint16(data[i+4 : i+6])
-			fmt.Printf("Peer: %s:%d\n", ip, port)
-
 			addr := fmt.Sprintf("%s:%d", ip, port)
+			if _, dup := seen[addr]; dup {
+				fmt.Printf("Peer duplicado omitido: %s\n", addr)
+				continue
+			}
+			seen[addr] = struct{}{}
+			fmt.Printf("Peer: %s\n", addr)
+
 			var peerIdBytes [20]byte
 			copy(peerIdBytes[:], []byte(peerId))
 			pc, err := peerwire.NewPeerConn(addr, infoHash, peerIdBytes)
@@ -157,7 +202,7 @@ func main() {
 			// Enviar nuestro bitfield inicial (puede estar vacío al inicio)
 			_ = pc.SendBitfield(store.Bitfield())
 
-			//enviar el Interested
+			//enviar el Interested (también será enviado automáticamente si procede al recibir bitfield remoto)
 			pc.SendMessage(peerwire.MsgInterested, nil)
 
 			// iniciar loop de lectura en paralelo
