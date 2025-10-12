@@ -1,11 +1,10 @@
-
 // client/cmd/main.go
 
 package main
 
 import (
-	"crypto/sha1"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -14,14 +13,14 @@ import (
 	"net/url"
 	"os"
 	"src/bencode"
-	"strings"
 	"src/peerwire"
+	"strings"
 )
 
 func generatePeerId() string {
-	buf := make([]byte,6)
+	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
-	return fmt.Sprintf("-JC0001-%s",hex.EncodeToString(buf))
+	return fmt.Sprintf("-JC0001-%s", hex.EncodeToString(buf))
 }
 
 func main() {
@@ -47,6 +46,10 @@ func main() {
 	var length int64
 	if v, ok := info["length"].(int64); ok {
 		length = v
+	}
+	var pieceLength int64
+	if v, ok := info["piece length"].(int64); ok {
+		pieceLength = v
 	}
 
 	var buf strings.Builder
@@ -96,26 +99,44 @@ func main() {
 
 	fmt.Println("Tracker responde: ", trackerResponse)
 
+	// Inicializar almacenamiento en disco y manager para broadcast HAVE
+	store, err := peerwire.NewDiskPieceStore("download.data", int(pieceLength), length)
+	if err != nil {
+		panic(err)
+	}
+	mgr := peerwire.NewManager(store)
+
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
 		data := []byte(peersRaw)
+
+		// Evitar conexiones duplicadas al mismo ip:port
+		seen := make(map[string]struct{})
 
 		for i := 0; i < len(data); i += 6 {
 			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
 			port := binary.BigEndian.Uint16(data[i+4 : i+6])
-			fmt.Printf("Peer: %s:%d\n", ip, port)
-			
 			addr := fmt.Sprintf("%s:%d", ip, port)
-			var peerIdBytes [20]byte
-			copy(peerIdBytes[:],[]byte(peerId))
-			pc, err := peerwire.NewPeerConn(addr,infoHash,peerIdBytes)
 
-			if err != nil{
+			if _, dup := seen[addr]; dup {
+				fmt.Printf("Peer duplicado omitido: %s\n", addr)
+				continue
+			}
+			seen[addr] = struct{}{}
+
+			fmt.Printf("Peer: %s\n", addr)
+
+			var peerIdBytes [20]byte
+			copy(peerIdBytes[:], []byte(peerId))
+			pc, err := peerwire.NewPeerConn(addr, infoHash, peerIdBytes)
+			if err != nil {
 				fmt.Println("Error creando PeerConn:", err)
 				continue
 			}
 
 			defer pc.Close()
-			
+			// Integrar con el manager para almacenamiento y broadcast HAVE
+			pc.BindManager(mgr)
+
 			// Handshake
 			if err := pc.Handshake(); err != nil {
 				panic(err)
@@ -123,8 +144,11 @@ func main() {
 
 			fmt.Println("Conectado al peer, handshake OK")
 
+			// Enviar nuestro bitfield inicial (puede estar vacío al inicio)
+			_ = pc.SendBitfield(store.Bitfield())
+
 			//enviar el Interested
-			pc.SendMessage(peerwire.MsgInterested,nil)
+			pc.SendMessage(peerwire.MsgInterested, nil)
 
 			// iniciar loop de lectura en paralelo
 			go pc.ReadLoop()
