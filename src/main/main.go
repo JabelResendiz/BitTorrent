@@ -1,20 +1,29 @@
 package main
 
 import (
+	"crypto/sha1"
 	"fmt"
 	"os"
 	"src/bencode"
 )
 
 func main() {
+	// For reproducible tests, we'll define content bytes (all zeros)
+	totalLen := int64(12345)
+	pieceLen := int64(16384)
+	// Single piece (since totalLen < pieceLen)
+	content := make([]byte, totalLen) // zero-filled
+	sum := sha1.Sum(content)
+
 	torrent := map[string]interface{}{
 		// Apunta al tracker local por defecto
 		"announce": "http://localhost:8080/announce",
 		"info": map[string]interface{}{
 			"name":         "archivo.txt",
-			"length":       int64(12345),
-			"piece length": int64(16384),
-			"pieces":       "12345678901234567890", // dummy SHA1
+			"length":       totalLen,
+			"piece length": pieceLen,
+			// 'pieces' is binary string of 20-byte SHA1(s)
+			"pieces": string(sum[:]),
 		},
 	}
 
@@ -27,6 +36,9 @@ func main() {
 	}
 
 	fmt.Println("Archivo test.torrent creado con exito")
+
+	// Optionally write the content to a reference file
+	_ = os.WriteFile("contenido_ref.bin", content, 0644)
 
 	file, err := os.Open("test.torrent")
 
