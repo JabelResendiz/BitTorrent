@@ -1,6 +1,7 @@
 package peerwire
 
 import (
+	"crypto/sha1"
 	"errors"
 	"os"
 	"sync"
@@ -32,6 +33,9 @@ type DiskPieceStore struct {
 	bitfield  []byte
 	completed []bool
 	received  []int64 // naive accounting per piece
+
+	// expected SHA-1 per piece; if provided, completion requires hash match
+	expected [][20]byte
 
 	cbs []func(int)
 }
@@ -125,6 +129,22 @@ func (s *DiskPieceStore) WriteBlock(piece int, begin int, data []byte) (bool, er
 	if !s.completed[piece] {
 		s.received[piece] += int64(len(data))
 		if s.received[piece] >= psize {
+			// If we have expected hashes, verify before marking complete
+			if len(s.expected) == s.numPieces {
+				// Read full piece from disk
+				plen := int(psize)
+				buf := make([]byte, plen)
+				off := int64(piece) * int64(s.pieceLength)
+				if _, err := s.f.ReadAt(buf, off); err != nil {
+					return false, err
+				}
+				sum := sha1.Sum(buf)
+				if sum != s.expected[piece] {
+					// Hash mismatch: treat as invalid; reset counters for this piece
+					s.received[piece] = 0
+					return false, errors.New("piece hash mismatch")
+				}
+			}
 			s.markComplete(piece)
 			_ = s.f.Sync()
 			// fire callbacks out of lock
@@ -162,4 +182,13 @@ func (s *DiskPieceStore) OnPieceComplete(cb func(piece int)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cbs = append(s.cbs, cb)
+}
+
+// SetExpectedHashes sets the expected SHA-1 hash per piece (20 bytes each).
+// Provide exactly NumPieces() entries. If set, a piece will only be marked
+// complete once its on-disk bytes hash to the expected value.
+func (s *DiskPieceStore) SetExpectedHashes(hashes [][20]byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expected = hashes
 }
