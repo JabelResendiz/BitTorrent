@@ -109,25 +109,16 @@ func main() {
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
 		data := []byte(peersRaw)
 
-		// Evitar conexiones duplicadas al mismo ip:port
-		seen := make(map[string]struct{})
-
 		for i := 0; i < len(data); i += 6 {
 			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
 			port := binary.BigEndian.Uint16(data[i+4 : i+6])
+			fmt.Printf("Peer: %s:%d\n", ip, port)
+
 			addr := fmt.Sprintf("%s:%d", ip, port)
-
-			if _, dup := seen[addr]; dup {
-				fmt.Printf("Peer duplicado omitido: %s\n", addr)
-				continue
-			}
-			seen[addr] = struct{}{}
-
-			fmt.Printf("Peer: %s\n", addr)
-
 			var peerIdBytes [20]byte
 			copy(peerIdBytes[:], []byte(peerId))
 			pc, err := peerwire.NewPeerConn(addr, infoHash, peerIdBytes)
+
 			if err != nil {
 				fmt.Println("Error creando PeerConn:", err)
 				continue
