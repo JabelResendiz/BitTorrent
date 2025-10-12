@@ -141,6 +141,17 @@ func handleConn(c net.Conn, infoHash [20]byte, peerID [20]byte, pieceLen int, to
 		switch id {
 		case MsgInterested:
 			// ignore
+		case MsgBitfield:
+			// pequeño log para ver el bitfield que envía el cliente
+			cnt := 0
+			for _, b := range payload {
+				for i := 0; i < 8; i++ {
+					if b&(1<<uint(7-i)) != 0 {
+						cnt++
+					}
+				}
+			}
+			log.Printf("stub recibió BITFIELD del cliente: len=%d bytes, piezas=%d, hex=%x", len(payload), cnt, payload)
 		case MsgRequest:
 			if len(payload) != 12 {
 				continue

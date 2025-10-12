@@ -11,6 +11,9 @@ type PeerConn struct {
 	PeerChoking    bool
 	PeerInterested bool
 	manager        *Manager
+
+	// remote bitfield (as advertised by the peer). Length should be ceil(NumPieces/8)
+	remoteBF []byte
 }
 
 func (p *PeerConn) Close() {
@@ -26,6 +29,37 @@ func (p *PeerConn) BindManager(m *Manager) {
 	if m != nil {
 		m.AddPeer(p)
 	}
+}
+
+// UpdateRemoteBitfield stores the remote peer bitfield snapshot
+func (p *PeerConn) UpdateRemoteBitfield(b []byte) {
+	if b == nil {
+		p.remoteBF = nil
+		return
+	}
+	if p.manager != nil && p.manager.Store() != nil {
+		// Trim/expand to expected length
+		exp := (p.manager.Store().NumPieces() + 7) / 8
+		if len(b) != exp {
+			// ignore invalid sizes
+			return
+		}
+	}
+	p.remoteBF = make([]byte, len(b))
+	copy(p.remoteBF, b)
+}
+
+// RemoteHasPiece checks remote bitfield for a piece index
+func (p *PeerConn) RemoteHasPiece(i int) bool {
+	if i < 0 || p.remoteBF == nil {
+		return false
+	}
+	byteIdx := i / 8
+	bit := 7 - (i % 8)
+	if byteIdx < 0 || byteIdx >= len(p.remoteBF) {
+		return false
+	}
+	return (p.remoteBF[byteIdx] & (1 << uint(bit))) != 0
 }
 
 // estructura para representar una pieza del archivo torrent

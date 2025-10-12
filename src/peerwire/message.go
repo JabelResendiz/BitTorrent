@@ -88,5 +88,16 @@ func (p *PeerConn) SendBitfield(bits []byte) error {
 	if len(bits) == 0 {
 		return nil
 	}
+	// don't send if all zeros (no piezas): es válido omitir el bitfield
+	allZero := true
+	for _, b := range bits {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil
+	}
 	return p.SendMessage(MsgBitfiled, bits)
 }
