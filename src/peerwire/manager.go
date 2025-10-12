@@ -28,10 +28,26 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		p.PeerChoking = false
 		fmt.Println("Peer te unchokeo. Enviando request de prueba...")
 
-		// Enviar un request de bloque fake (offset 0, length 16384)
+		// Enviar un request de bloque real (offset 0, length acorde al tamaño de la pieza)
 		index := uint32(0)
 		begin := uint32(0)
-		length := uint32(16384) // 16KB del bloque
+		length := uint32(16384)
+		if p.manager != nil && p.manager.Store() != nil {
+			pl := p.manager.Store().PieceLength()
+			tl := p.manager.Store().TotalLength()
+			// pieza 0 puede ser más corta si total < pieceLength
+			req := int64(pl)
+			if tl < int64(pl) {
+				req = tl
+			}
+			if req <= 0 {
+				req = int64(pl)
+			}
+			if req > int64(^uint32(0)) {
+				req = int64(^uint32(0))
+			}
+			length = uint32(req)
+		}
 		req := new(bytes.Buffer)
 		binary.Write(req, binary.BigEndian, index)
 		binary.Write(req, binary.BigEndian, begin)

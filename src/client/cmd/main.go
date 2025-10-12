@@ -52,6 +52,20 @@ func main() {
 		pieceLength = v
 	}
 
+	// Parse expected piece hashes (info.pieces) if present and well-formed
+	var expectedHashes [][20]byte
+	if piecesRaw, ok := info["pieces"].(string); ok {
+		numPieces := int((length + pieceLength - 1) / pieceLength)
+		if len(piecesRaw) == numPieces*20 {
+			expectedHashes = make([][20]byte, numPieces)
+			for i := 0; i < numPieces; i++ {
+				copy(expectedHashes[i][:], piecesRaw[i*20:(i+1)*20])
+			}
+		} else {
+			fmt.Printf("Advertencia: longitud de 'pieces' (%d) no coincide con numPieces*20 (%d)\n", len(piecesRaw), numPieces*20)
+		}
+	}
+
 	var buf strings.Builder
 	for _, b := range infoHash {
 		buf.WriteString(fmt.Sprintf("%%%02X", b))
@@ -105,6 +119,11 @@ func main() {
 		panic(err)
 	}
 	mgr := peerwire.NewManager(store)
+
+	// Si tenemos hashes esperados válidos, configurarlos para verificación SHA-1
+	if len(expectedHashes) == store.NumPieces() {
+		store.SetExpectedHashes(expectedHashes)
+	}
 
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
 		data := []byte(peersRaw)
