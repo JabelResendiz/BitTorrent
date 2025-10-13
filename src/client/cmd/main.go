@@ -3,12 +3,14 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -81,9 +83,17 @@ func main() {
 	// 	hostIP = "127.0.0.1"
 	// }
 
+	// Abrir listener local para aceptar conexiones entrantes; usar puerto 0 para que el SO asigne uno libre
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		panic(err)
+	}
+	listenPort := ln.Addr().(*net.TCPAddr).Port
+	fmt.Println("Cliente escuchando en puerto:", listenPort)
+
 	params := url.Values{
 		"peer_id":    []string{peerId},
-		"port":       []string{"6881"},
+		"port":       []string{fmt.Sprintf("%d", listenPort)},
 		"uploaded":   []string{"0"},
 		"downloaded": []string{"0"},
 		"left":       []string{fmt.Sprintf("%d", length)},
@@ -149,7 +159,7 @@ func main() {
 		}
 		stopParams := url.Values{
 			"peer_id":    []string{peerId},
-			"port":       []string{"6881"},
+			"port":       []string{fmt.Sprintf("%d", listenPort)},
 			"uploaded":   []string{"0"},
 			"downloaded": []string{fmt.Sprintf("%d", length-left)},
 			"left":       []string{fmt.Sprintf("%d", left)},
@@ -210,6 +220,49 @@ func main() {
 		}
 	}
 
-	// mantener main corriendo meintras llegan mensajes
+	// Aceptar conexiones entrantes en segundo plano
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				fmt.Println("Error aceptando conexión:", err)
+				continue
+			}
+			go func(conn net.Conn) {
+				// Leer handshake del peer remoto
+				hs := make([]byte, peerwire.HandshakeLen)
+				if _, err := io.ReadFull(conn, hs); err != nil {
+					fmt.Println("Error leyendo handshake entrante:", err)
+					conn.Close()
+					return
+				}
+				if int(hs[0]) != 19 || string(hs[1:20]) != "BitTorrent protocol" {
+					fmt.Println("Handshake entrante inválido: pstr")
+					conn.Close()
+					return
+				}
+				if !bytes.Equal(hs[28:48], infoHash[:]) {
+					fmt.Println("Handshake entrante inválido: info_hash")
+					conn.Close()
+					return
+				}
+				// Enviar nuestro handshake de respuesta
+				var pidBytes [20]byte
+				copy(pidBytes[:], []byte(peerId))
+				pc := peerwire.NewPeerConnFromConn(conn, infoHash, pidBytes)
+				if err := pc.SendHandshakeOnly(); err != nil {
+					fmt.Println("Error enviando handshake de respuesta:", err)
+					conn.Close()
+					return
+				}
+				// Integrar con manager, enviar Bitfield y arrancar ReadLoop
+				pc.BindManager(mgr)
+				_ = pc.SendBitfield(store.Bitfield())
+				go pc.ReadLoop()
+			}(c)
+		}
+	}()
+
+	// mantener main corriendo mientras llegan mensajes
 	select {}
 }
