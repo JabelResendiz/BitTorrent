@@ -101,3 +101,23 @@ func (p *PeerConn) SendBitfield(bits []byte) error {
 	}
 	return p.SendMessage(MsgBitfiled, bits)
 }
+
+// SendPiece sends a piece block with given index, begin and data
+func (p *PeerConn) SendPiece(index uint32, begin uint32, data []byte) error {
+	hdr := new(bytes.Buffer)
+	total := uint32(9 + len(data))
+	if err := binary.Write(hdr, binary.BigEndian, total); err != nil {
+		return err
+	}
+	hdr.WriteByte(MsgPiece)
+	if err := binary.Write(hdr, binary.BigEndian, index); err != nil {
+		return err
+	}
+	if err := binary.Write(hdr, binary.BigEndian, begin); err != nil {
+		return err
+	}
+	if _, err := p.Conn.Write(append(hdr.Bytes(), data...)); err != nil {
+		return err
+	}
+	return nil
+}

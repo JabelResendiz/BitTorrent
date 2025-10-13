@@ -59,6 +59,8 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 
 	case MsgInterested:
 		p.PeerInterested = true
+		// si el remoto está interesado, unchokear para permitirle pedir
+		p.SendMessage(MsgUnchoke, nil)
 	case MsgNotInterested:
 		p.PeerInterested = false
 	case MsgHave:
@@ -120,6 +122,22 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 				fmt.Println("Error guardando bloque:", err)
 			}
 		}
+	case MsgRequest:
+		// Upload path: responder con MsgPiece leyendo del store
+		if len(payload) != 12 {
+			return
+		}
+		idx := binary.BigEndian.Uint32(payload[0:4])
+		rbegin := binary.BigEndian.Uint32(payload[4:8])
+		rlen := binary.BigEndian.Uint32(payload[8:12])
+		if p.manager == nil || p.manager.Store() == nil {
+			return
+		}
+		data, err := p.manager.Store().ReadBlock(int(idx), int(rbegin), int(rlen))
+		if err != nil {
+			return
+		}
+		_ = p.SendPiece(idx, rbegin, data)
 	case 255:
 		//ignorar
 	default:
