@@ -6,6 +6,47 @@ import (
 	"fmt"
 )
 
+const blockLen = 16 * 1024
+
+// requestNextBlocks requests up to a small window of blocks for the active piece
+func (p *PeerConn) requestNextBlocks(piece int) {
+	if p.manager == nil || p.manager.Store() == nil {
+		return
+	}
+	store := p.manager.Store()
+	plen := store.PieceLength()
+	// last piece size
+	if piece == store.NumPieces()-1 {
+		// compute actual last piece size
+		total := store.TotalLength()
+		plen = int(total - int64(store.PieceLength())*int64(store.NumPieces()-1))
+	}
+	// if we already have the piece skip
+	if store.HasPiece(piece) {
+		return
+	}
+	// establish per-peer state
+	if p.curPiece != piece {
+		p.curPiece = piece
+		p.curOffset = 0
+	}
+	begin := p.curOffset
+	// size to request this time
+	sz := blockLen
+	if begin+sz > plen {
+		sz = plen - begin
+	}
+	if sz <= 0 {
+		return
+	}
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.BigEndian, uint32(piece))
+	binary.Write(&buf, binary.BigEndian, uint32(begin))
+	binary.Write(&buf, binary.BigEndian, uint32(sz))
+	_ = p.SendMessage(MsgRequest, buf.Bytes())
+	p.downloading = true
+}
+
 func (p *PeerConn) ReadLoop() {
 	for {
 		id, payload, err := p.ReadMessage()
@@ -24,45 +65,27 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	switch id {
 	case MsgChoke:
 		p.PeerChoking = true
-	case MsgUnchoke:
-		p.PeerChoking = false
-		fmt.Println("Peer te unchokeo. Enviando request de prueba...")
-
-		// Enviar un request de bloque real (offset 0, length acorde al tamaño de la pieza)
-		index := uint32(0)
-		begin := uint32(0)
-		length := uint32(16384)
-		if p.manager != nil && p.manager.Store() != nil {
-			pl := p.manager.Store().PieceLength()
-			tl := p.manager.Store().TotalLength()
-			// pieza 0 puede ser más corta si total < pieceLength
-			req := int64(pl)
-			if tl < int64(pl) {
-				req = tl
-			}
-			if req <= 0 {
-				req = int64(pl)
-			}
-			if req > int64(^uint32(0)) {
-				req = int64(^uint32(0))
-			}
-			length = uint32(req)
-		}
-		req := new(bytes.Buffer)
-		binary.Write(req, binary.BigEndian, index)
-		binary.Write(req, binary.BigEndian, begin)
-		binary.Write(req, binary.BigEndian, length)
-
-		if err := p.SendMessage(MsgRequest, req.Bytes()); err != nil {
-			fmt.Println("Error enviando request:", err)
-		}
-
 	case MsgInterested:
+		// Remote indicates it's interested in our pieces: unchoke so it can request
 		p.PeerInterested = true
-		// si el remoto está interesado, unchokear para permitirle pedir
-		p.SendMessage(MsgUnchoke, nil)
+		_ = p.SendMessage(MsgUnchoke, nil)
 	case MsgNotInterested:
 		p.PeerInterested = false
+	case MsgUnchoke:
+		p.PeerChoking = false
+		fmt.Println("Peer te unchokeo. Buscando pieza a solicitar...")
+		if p.manager != nil && p.manager.Store() != nil {
+			// evitar duplicar arranques si ya estamos descargando algo
+			if !p.downloading {
+				picker := NewPiecePicker()
+				piece := picker.NextPieceFor(p, p.manager.Store())
+				if piece >= 0 {
+					p.requestNextBlocks(piece)
+				} else {
+					fmt.Println("Nada que pedir a este peer")
+				}
+			}
+		}
 	case MsgHave:
 		index := binary.BigEndian.Uint32(payload)
 		fmt.Println("Peer tiene pieza:", index)
@@ -120,6 +143,47 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		if p.manager != nil && p.manager.Store() != nil {
 			if _, err := p.manager.Store().WriteBlock(int(index), int(begin), block); err != nil {
 				fmt.Println("Error guardando bloque:", err)
+			}
+			// Pedir siguiente bloque de la misma pieza si aún no completa
+			if !p.manager.Store().HasPiece(int(index)) {
+				// siguiente bloque
+				// Phase 1 naive: asumimos que vamos en begin=0 y luego bloque único
+				// Para progresar, pedimos el resto de la pieza si cabe
+				// calcular siguiente begin
+				nextBegin := int(begin) + len(block)
+				if p.curPiece == int(index) {
+					p.curOffset = nextBegin
+				}
+				plen := p.manager.Store().PieceLength()
+				if int(index) == p.manager.Store().NumPieces()-1 {
+					total := p.manager.Store().TotalLength()
+					plen = int(total - int64(p.manager.Store().PieceLength())*int64(p.manager.Store().NumPieces()-1))
+				}
+				if nextBegin < plen {
+					sz := blockLen
+					if nextBegin+sz > plen {
+						sz = plen - nextBegin
+					}
+					var b bytes.Buffer
+					binary.Write(&b, binary.BigEndian, index)
+					binary.Write(&b, binary.BigEndian, uint32(nextBegin))
+					binary.Write(&b, binary.BigEndian, uint32(sz))
+					_ = p.SendMessage(MsgRequest, b.Bytes())
+				} else {
+					// pieza completada por tamaño; SHA-1 confirmará y manager hará HAVE broadcast
+				}
+			} else {
+				// pieza completada, elegir otra si existe
+				picker := NewPiecePicker()
+				nxt := picker.NextPieceFor(p, p.manager.Store())
+				if nxt >= 0 {
+					p.curPiece = nxt
+					p.curOffset = 0
+					p.downloading = false
+					p.requestNextBlocks(nxt)
+				} else {
+					p.downloading = false
+				}
 			}
 		}
 	case MsgRequest:

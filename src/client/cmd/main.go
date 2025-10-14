@@ -118,14 +118,22 @@ func main() {
 	tempPath := filepath.Join(archivesDir, outName+".part")
 	finalPath := filepath.Join(archivesDir, outName)
 
-	// Elegir modo: si ya existe el archivo final con tamaño correcto, abrir en modo seeding
+	// Elegir modo de apertura del store:
+	// - si existe archivo final completo: seeding
+	// - si existe .part del tamaño correcto: reanudar sin truncar
+	// - si no existe: crear .part nuevo truncando
 	useFinal := false
+	usePartResume := false
 	if st, err := os.Stat(finalPath); err == nil && st.Size() == length {
 		useFinal = true
+	} else if st, err := os.Stat(tempPath); err == nil && st.Size() == length {
+		usePartResume = true
 	}
 	var store *peerwire.DiskPieceStore
 	if useFinal {
 		store, err = peerwire.NewDiskPieceStoreWithMode(finalPath, int(pieceLength), length, false)
+	} else if usePartResume {
+		store, err = peerwire.NewDiskPieceStoreWithMode(tempPath, int(pieceLength), length, false)
 	} else {
 		store, err = peerwire.NewDiskPieceStore(tempPath, int(pieceLength), length)
 	}
@@ -139,10 +147,10 @@ func main() {
 		store.SetExpectedHashes(expectedHashes)
 	}
 
-	// Si usamos archivo final existente, intentar marcar piezas completas (seeding)
-	if useFinal && len(expectedHashes) == store.NumPieces() {
+	// Si existe archivo final o .part previo, intentar marcar piezas completas por SHA-1
+	if (useFinal || usePartResume) && len(expectedHashes) == store.NumPieces() {
 		if err := store.ScanAndMarkComplete(); err != nil {
-			fmt.Println("No se pudo escanear archivo existente para seed:", err)
+			fmt.Println("No se pudo escanear archivo existente para marcar piezas:", err)
 		}
 	}
 
