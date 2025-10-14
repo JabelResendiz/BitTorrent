@@ -41,6 +41,13 @@ type DiskPieceStore struct {
 }
 
 func NewDiskPieceStore(path string, pieceLength int, totalLength int64) (*DiskPieceStore, error) {
+	return NewDiskPieceStoreWithMode(path, pieceLength, totalLength, true)
+}
+
+// NewDiskPieceStoreWithMode allows controlling whether to truncate the file.
+// If truncate is true, the file will be created/truncated to totalLength (download mode).
+// If false, it will open without truncation (useful for seeding from an existing file).
+func NewDiskPieceStoreWithMode(path string, pieceLength int, totalLength int64, truncate bool) (*DiskPieceStore, error) {
 	if pieceLength <= 0 || totalLength <= 0 {
 		return nil, errors.New("invalid lengths")
 	}
@@ -48,9 +55,11 @@ func NewDiskPieceStore(path string, pieceLength int, totalLength int64) (*DiskPi
 	if err != nil {
 		return nil, err
 	}
-	if err := f.Truncate(totalLength); err != nil {
-		f.Close()
-		return nil, err
+	if truncate {
+		if err := f.Truncate(totalLength); err != nil {
+			f.Close()
+			return nil, err
+		}
 	}
 	numPieces := int((totalLength + int64(pieceLength) - 1) / int64(pieceLength))
 	return &DiskPieceStore{
@@ -191,4 +200,47 @@ func (s *DiskPieceStore) SetExpectedHashes(hashes [][20]byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.expected = hashes
+}
+
+// ScanAndMarkComplete scans the underlying file and, when expected hashes are set,
+// marks pieces as complete if their content matches the expected SHA-1.
+// It sets received counters accordingly. Intended for seeding from an existing file.
+func (s *DiskPieceStore) ScanAndMarkComplete() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.expected) != s.numPieces {
+		return errors.New("expected hashes not set or length mismatch")
+	}
+	fi, err := s.f.Stat()
+	if err != nil {
+		return err
+	}
+	if fi.Size() != s.totalLength {
+		return errors.New("file size does not match total length")
+	}
+	// Iterate pieces
+	for i := 0; i < s.numPieces; i++ {
+		if s.completed[i] {
+			continue
+		}
+		psize := s.pieceSize(i)
+		buf := make([]byte, int(psize))
+		off := int64(i) * int64(s.pieceLength)
+		if _, err := s.f.ReadAt(buf, off); err != nil {
+			return err
+		}
+		sum := sha1.Sum(buf)
+		if sum == s.expected[i] {
+			// mark complete
+			byteIdx := i / 8
+			bit := 7 - (i % 8)
+			s.bitfield[byteIdx] |= (1 << uint(bit))
+			s.completed[i] = true
+			s.received[i] = psize
+		} else {
+			s.completed[i] = false
+			s.received[i] = 0
+		}
+	}
+	return nil
 }
