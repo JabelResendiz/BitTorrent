@@ -11,9 +11,8 @@ RUN go mod tidy
 # Copia todo el código
 COPY . .
 
-# Compila solo el tracker
-RUN go build -o client2 ./client/cmd
+# Compila el cliente
+RUN go build -o client-bin ./client/cmd
 
-EXPOSE 6881
-
-CMD ["./client2"]
+# Define el ENTRYPOINT para que los argumentos se pasen al binario
+ENTRYPOINT ["./client-bin"]
