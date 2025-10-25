@@ -15,10 +15,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"src/bencode"
 	"src/peerwire"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 )
 
 func generatePeerId() string {
@@ -27,7 +31,69 @@ func generatePeerId() string {
 	return fmt.Sprintf("-JC0001-%s", hex.EncodeToString(buf))
 }
 
+// sendAnnounce envía un announce al tracker y devuelve la respuesta decodificada
+func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploaded, downloaded, left int64, event string) (map[string]interface{}, error) {
+	params := url.Values{
+		"peer_id":    []string{peerId},
+		"port":       []string{fmt.Sprintf("%d", port)},
+		"uploaded":   []string{fmt.Sprintf("%d", uploaded)},
+		"downloaded": []string{fmt.Sprintf("%d", downloaded)},
+		"left":       []string{fmt.Sprintf("%d", left)},
+		"compact":    []string{"1"},
+		"key":        []string{"jc12345"},
+	}
+
+	// Solo agregar event si no está vacío
+	if event != "" {
+		params.Set("event", event)
+	}
+
+	// Agregar numwant para started
+	if event == "started" {
+		params.Set("numwant", "50")
+	} else if event == "stopped" {
+		params.Set("numwant", "0")
+	}
+
+	fullURL := announceURL + "?info_hash=" + infoHashEncoded + "&" + params.Encode()
+
+	if event != "" {
+		fmt.Printf("[ANNOUNCE] Enviando event=%s, left=%d\n", event, left)
+	} else {
+		fmt.Printf("[ANNOUNCE] Enviando announce periódico, left=%d\n", left)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		return nil, fmt.Errorf("error en request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Decodificar respuesta
+	trackerResponse, err := bencode.Decode(resp.Body)
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("error decodificando respuesta: %w", err)
+	}
+
+	// Verificar failure reason
+	if failureReason, ok := trackerResponse["failure reason"].(string); ok {
+		return trackerResponse, fmt.Errorf("tracker error: %s", failureReason)
+	}
+
+	return trackerResponse, nil
+}
+
 func main() {
+	// Variables de control para manejo de eventos
+	var (
+		sigChan           = make(chan os.Signal, 1)
+		shutdownChan      = make(chan struct{})
+		completedChan     = make(chan struct{})
+		downloadCompleted bool
+		completedMu       sync.Mutex
+	)
+
 	// Flags: --torrent (obligatorio), --archives (opcional con default ./archives)
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio donde guardar/leer archivos")
@@ -167,6 +233,14 @@ func main() {
 		if all && !useFinal {
 			if err := os.Rename(tempPath, finalPath); err == nil {
 				fmt.Println("Descarga completa. Archivo listo en:", finalPath)
+
+				// Notificar que la descarga se completó
+				completedMu.Lock()
+				if !downloadCompleted {
+					downloadCompleted = true
+					close(completedChan)
+				}
+				completedMu.Unlock()
 			} else {
 				fmt.Println("No se pudo renombrar el archivo final:", err)
 			}
@@ -192,30 +266,21 @@ func main() {
 		}
 		return length - have
 	}
-	params := url.Values{
-		"peer_id":    []string{peerId},
-		"port":       []string{fmt.Sprintf("%d", listenPort)},
-		"uploaded":   []string{"0"},
-		"downloaded": []string{"0"},
-		"left":       []string{fmt.Sprintf("%d", computeLeft())},
-		"compact":    []string{"1"},
-		"event":      []string{"started"},
-		"numwant":    []string{"50"},
-		"key":        []string{"jc12345"},
-	}
-	fullURL := announce + "?info_hash=" + infoHashEncoded + "&" + params.Encode()
-	fmt.Println("Tracker request:", fullURL)
-	resp, err := http.Get(fullURL)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
 
-	trackerResponse, err := bencode.Decode(resp.Body)
-	if err != nil && err != io.EOF {
-		panic(err)
+	// Enviar announce inicial con event=started
+	initialLeft := computeLeft()
+	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started")
+	if err != nil {
+		panic(fmt.Errorf("error en announce inicial: %w", err))
 	}
 	fmt.Println("Tracker responde:", trackerResponse)
+
+	// Extraer intervalo del tracker (por defecto 30 minutos)
+	trackerInterval := 1800 * time.Second
+	if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
+		trackerInterval = time.Duration(intervalRaw) * time.Second
+		fmt.Printf("Intervalo de announces: %v\n", trackerInterval)
+	}
 
 	// Conectar a peers del tracker
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
@@ -293,41 +358,72 @@ func main() {
 		}
 	}()
 
-	// Enviar announce stopped al salir
-	defer func() {
-		left := length
-		if store != nil {
-			var have int64
-			num := store.NumPieces()
-			for i := 0; i < num; i++ {
-				if store.HasPiece(i) {
-					if i == num-1 {
-						have += length - int64(store.PieceLength())*int64(num-1)
-					} else {
-						have += int64(store.PieceLength())
-					}
+	// Goroutine: Announces periódicos al tracker
+	go func() {
+		ticker := time.NewTicker(trackerInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				left := computeLeft()
+				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "")
+				if err != nil {
+					fmt.Println("[ERROR] Announce periódico fallido:", err)
 				}
+
+			case <-shutdownChan:
+				return
 			}
-			if have > left {
-				have = left
-			}
-			left = length - have
 		}
-		stopParams := url.Values{
-			"peer_id":    []string{peerId},
-			"port":       []string{fmt.Sprintf("%d", listenPort)},
-			"uploaded":   []string{"0"},
-			"downloaded": []string{fmt.Sprintf("%d", length-left)},
-			"left":       []string{fmt.Sprintf("%d", left)},
-			"compact":    []string{"1"},
-			"event":      []string{"stopped"},
-			"numwant":    []string{"0"},
-			"key":        []string{"jc12345"},
-		}
-		stopURL := announce + "?info_hash=" + infoHashEncoded + "&" + stopParams.Encode()
-		_, _ = http.Get(stopURL)
 	}()
 
-	// Mantener el proceso vivo
-	select {}
+	// Goroutine: Detectar completación y enviar event=completed
+	go func() {
+		<-completedChan
+		fmt.Println("[INFO] Enviando event=completed al tracker...")
+		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed")
+		if err != nil {
+			fmt.Println("[ERROR] No se pudo enviar completed:", err)
+		} else {
+			fmt.Println("[INFO] Ahora soy un seeder completo")
+		}
+	}()
+
+	// Configurar captura de señales del sistema
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+
+	// Loop principal: esperar señal de terminación
+	fmt.Println("\n=== Cliente BitTorrent ejecutándose ===")
+	fmt.Println("Presiona Ctrl+C para detener el cliente")
+	fmt.Printf("Escuchando en puerto: %d\n", listenPort)
+	fmt.Printf("Announces cada: %v\n\n", trackerInterval)
+
+	sig := <-sigChan
+
+	// Shutdown limpio
+	fmt.Printf("\n\n=== Señal %v recibida, iniciando shutdown limpio ===\n", sig)
+
+	// Notificar a todas las goroutines que deben detenerse
+	close(shutdownChan)
+
+	// Enviar stopped al tracker
+	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
+	left := computeLeft()
+	downloaded := length - left
+	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped")
+	if err != nil {
+		fmt.Println("[ERROR] No se pudo enviar stopped:", err)
+	} else {
+		fmt.Println("[SHUTDOWN] Event=stopped enviado correctamente")
+	}
+
+	// Cerrar el listener de conexiones
+	fmt.Println("[SHUTDOWN] Cerrando listener...")
+	ln.Close()
+
+	// Dar tiempo a las goroutines para terminar
+	time.Sleep(500 * time.Millisecond)
+
+	fmt.Println("[SHUTDOWN] Cliente cerrado correctamente. Adiós!")
 }
