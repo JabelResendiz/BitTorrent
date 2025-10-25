@@ -1,6 +1,5 @@
 package tracker
 
-
 //tracker/anounce.go
 
 import (
@@ -82,8 +81,20 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 	// event handling: stopped => eliminar; completed/started/empty => alta/refresh
 	switch event {
 	case "stopped":
+		log.Printf("event=stopped from %s (ih=%s pid=%s)", ip.String(), infoHex[:8], peerHex[:8])
 		_ = t.SaveOnChange(func() { t.RemovePeer(infoHex, peerHex) })
+
+	case "started":
+		log.Printf("event=started from %s (ih=%s pid=%s left=%d)", ip.String(), infoHex[:8], peerHex[:8], left)
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, ip, uint16(port64), completed, now) })
+
+	case "completed":
+		log.Printf("event=completed from %s (ih=%s pid=%s) - peer is now seeder!", ip.String(), infoHex[:8], peerHex[:8])
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, ip, uint16(port64), true, now) })
+
 	default:
+		// Announce regular sin evento (periódico)
+		log.Printf("periodic announce from %s (ih=%s pid=%s left=%d)", ip.String(), infoHex[:8], peerHex[:8], left)
 		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, ip, uint16(port64), completed, now) })
 	}
 
