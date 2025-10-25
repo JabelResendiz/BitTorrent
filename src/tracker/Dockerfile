@@ -16,4 +16,4 @@ RUN go build -o tracker2 ./tracker/cmd
 
 EXPOSE 2377
 
-CMD ["./tracker"]
+CMD ["./tracker2"]
