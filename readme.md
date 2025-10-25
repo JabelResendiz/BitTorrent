@@ -26,7 +26,7 @@ Si todo va bien, se debe ver algo como:
 Abre otra terminal y ejecutar:
 
 ```bash
-go run client/cmd/main.go
+go run client/cmd/main.go --torrent="./vid.torrent" --archives="¨~/<carpeta home>"
 ```
 
 La salida esperada será algo como :
