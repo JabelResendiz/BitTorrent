@@ -84,6 +84,68 @@ func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploade
 	return trackerResponse, nil
 }
 
+// sendScrape envía una petición scrape al tracker y muestra las estadísticas
+func sendScrape(announceURL, infoHashEncoded string, infoHash [20]byte) {
+	// Construir URL de scrape
+	pos := strings.LastIndex(announceURL, "/")
+	if pos == -1 {
+		fmt.Println("[SCRAPE] URL inválida, no se puede hacer scrape")
+		return
+	}
+
+	last := announceURL[pos+1:]
+	if !strings.HasPrefix(last, "announce") {
+		fmt.Println("[SCRAPE] Tracker no soporta scrape")
+		return
+	}
+
+	scrapeURL := announceURL[:pos+1] + strings.Replace(last, "announce", "scrape", 1)
+	fullURL := scrapeURL + "?info_hash=" + infoHashEncoded
+
+	fmt.Println("[SCRAPE] Obteniendo estadísticas del tracker...")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		fmt.Println("[SCRAPE] Error:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	scrapeResponse, err := bencode.Decode(resp.Body)
+	if err != nil && err != io.EOF {
+		fmt.Println("[SCRAPE] Error decodificando:", err)
+		return
+	}
+
+	// Extraer y mostrar estadísticas
+	files, ok := scrapeResponse["files"].(map[string]interface{})
+	if !ok {
+		fmt.Println("[SCRAPE] No hay estadísticas disponibles")
+		return
+	}
+
+	stats, ok := files[string(infoHash[:])].(map[string]interface{})
+	if !ok {
+		fmt.Println("[SCRAPE] No hay estadísticas para este torrent")
+		return
+	}
+
+	complete, _ := stats["complete"].(int64)
+	incomplete, _ := stats["incomplete"].(int64)
+	downloaded, _ := stats["downloaded"].(int64)
+
+	fmt.Println("\n╔═══════════════════════════════════════╗")
+	fmt.Println("║     ESTADÍSTICAS DEL TRACKER          ║")
+	fmt.Println("╠═══════════════════════════════════════╣")
+	fmt.Printf("║ Seeders (completos):   %15d ║\n", complete)
+	fmt.Printf("║ Leechers (descargando): %14d ║\n", incomplete)
+	fmt.Printf("║ Descargas completadas:  %14d ║\n", downloaded)
+	fmt.Printf("║ Total peers:            %14d ║\n", complete+incomplete)
+	fmt.Println("╚═══════════════════════════════════════╝")
+	fmt.Println()
+}
+
 func main() {
 	// Variables de control para manejo de eventos
 	var (
@@ -274,6 +336,9 @@ func main() {
 		panic(fmt.Errorf("error en announce inicial: %w", err))
 	}
 	fmt.Println("Tracker responde:", trackerResponse)
+
+	// Hacer scrape para obtener estadísticas del torrent
+	sendScrape(announce, infoHashEncoded, infoHash)
 
 	// Extraer intervalo del tracker (por defecto 30 minutos)
 	trackerInterval := 1800 * time.Second
