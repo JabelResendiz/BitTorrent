@@ -8,6 +8,42 @@
 
 ## Run
 
+## Docker Commands
+
+> Constuir las imagenes dentro de src
+
+```bash
+docker build -t client -f client/Dockerfile .
+
+docker build -t tracker -f tracker/Dockerfile .
+
+```
+
+PC 1:
+
+```bash
+
+docker swarm init
+
+docker swarm join-token manager
+
+# obtener un token y pasarlo a la pc2
+
+docker network create --driver overlay <nombre de la red>
+
+```
+
+PC2:
+
+```bash
+
+#comando del manager del token
+
+docker network ls
+
+
+```
+
 ### 🛰️ Run Tracker
 Abre una terminal en la raíz del proyecto(src) y ejecuta:
 
