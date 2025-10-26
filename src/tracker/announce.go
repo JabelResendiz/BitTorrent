@@ -121,7 +121,13 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 
 	if useNonCompact {
 		// Formato non-compact: lista de diccionarios
-		reply["peers"] = nonCompactPeers(peers)
+		// Convertir []map[string]interface{} a []interface{} para el encoder
+		peersList := nonCompactPeers(peers)
+		peersInterface := make([]interface{}, len(peersList))
+		for i, p := range peersList {
+			peersInterface[i] = p
+		}
+		reply["peers"] = peersInterface
 	} else {
 		// Formato compact: string de bytes
 		reply["peers"] = compactPeers(peers)
