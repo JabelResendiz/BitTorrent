@@ -5,7 +5,6 @@ package tracker
 import (
 	"encoding/hex"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,10 +14,11 @@ import (
 // Peer: estado mínimo de un peer en un swarm
 type Peer struct {
 	PeerIDHex string    `json:"peer_id"`
-	IP        string    `json:"ip"` // IPv4 textual (ej.: 192.168.1.10)
+	IP        string    `json:"ip"`
 	Port      uint16    `json:"port"`
 	LastSeen  time.Time `json:"last_seen"`
-	Completed bool      `json:"completed"` // true si left==0 reportado
+	Completed bool      `json:"completed"`
+	HostName  string    `json:"host_name"`
 }
 
 // Swarm: conjunto de peers de un mismo torrent (info_hash)
@@ -65,7 +65,7 @@ func (t *Tracker) getOrCreateSwarm(infoHashHex string) *Swarm {
 // Add or update peer
 // AddPeer da de alta o actualiza (upsert) un peer dentro del swarm de infoHashHex.
 // Actualiza IP, puerto y LastSeen al momento now.
-func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, ip net.IP, port uint16, completed bool, now time.Time) {
+func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, hostname string, port uint16, completed bool, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -75,7 +75,8 @@ func (t *Tracker) AddPeer(infoHashHex, peerIDHex string, ip net.IP, port uint16,
 		p = &Peer{PeerIDHex: peerIDHex}
 		sw.Peers[peerIDHex] = p
 	}
-	p.IP = ip.String()
+	p.HostName = hostname
+	p.IP = hostname // Usar hostname como IP para compatibilidad
 	p.Port = port
 	p.LastSeen = now
 	p.Completed = completed || p.Completed
@@ -113,7 +114,7 @@ func (t *Tracker) GetPeers(infoHashHex, excludePeerIDHex string, max int) []*Pee
 		if id == excludePeerIDHex {
 			continue
 		}
-		res = append(res, &Peer{PeerIDHex: p.PeerIDHex, IP: p.IP, Port: p.Port, LastSeen: p.LastSeen})
+		res = append(res, &Peer{PeerIDHex: p.PeerIDHex, IP: p.IP, HostName: p.HostName, Port: p.Port, LastSeen: p.LastSeen})
 		if len(res) >= max {
 			break
 		}

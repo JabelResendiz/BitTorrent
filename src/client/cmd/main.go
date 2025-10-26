@@ -32,7 +32,7 @@ func generatePeerId() string {
 }
 
 // sendAnnounce envía un announce al tracker y devuelve la respuesta decodificada
-func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploaded, downloaded, left int64, event string, externalIP string) (map[string]interface{}, error) {
+func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploaded, downloaded, left int64, event string, hostname string) (map[string]interface{}, error) {
 	params := url.Values{
 		"peer_id":    []string{peerId},
 		"port":       []string{fmt.Sprintf("%d", port)},
@@ -41,13 +41,14 @@ func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploade
 		"left":       []string{fmt.Sprintf("%d", left)},
 		"compact":    []string{"1"},
 		"key":        []string{"jc12345"},
+		"hostname":   []string{hostname},
 	}
 
 	// Agregar IP externa si se proporciona (para Docker/NAT)
-	if externalIP != "" {
-		params.Set("ip", externalIP)
-		fmt.Printf("[ANNOUNCE] Usando IP externa: %s\n", externalIP)
-	}
+	// if externalIP != "" {
+	// 	params.Set("ip", externalIP)
+	// 	fmt.Printf("[ANNOUNCE] Usando IP externa: %s\n", externalIP)
+	// }
 
 	// Solo agregar event si no está vacío
 	if event != "" {
@@ -165,8 +166,7 @@ func main() {
 	// Flags: --torrent (obligatorio), --archives (opcional con default ./archives)
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio donde guardar/leer archivos")
-	externalIP := flag.String("external-ip", "", "IP externa para announces (requerido en Docker/NAT)")
-	port := flag.Int("port",6881,"Puerto de escucha")
+	hostnameFlag := flag.String("hostname", "", "nombre de host para announces (requerido en Docker/NAT)")
 	flag.Parse()
 
 	if *torrentFlag == "" {
@@ -240,12 +240,11 @@ func main() {
 
 	// Abrir listener local (puerto asignado automáticamente)
 
-	ln, err := net.Listen("tcp",fmt.Sprintf(":%d",*port))
-	// ln, err := net.Listen("tcp", ":0")
+	// ln, err := net.Listen("tcp",fmt.Sprintf(":%d",*port))
+	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		panic(err)
 	}
-
 
 	listenPort := ln.Addr().(*net.TCPAddr).Port
 	fmt.Println("Cliente escuchando en puerto:", listenPort)
@@ -343,7 +342,7 @@ func main() {
 
 	// Enviar announce inicial con event=started
 	initialLeft := computeLeft()
-	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started", *externalIP)
+	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started", *hostnameFlag)
 	if err != nil {
 		panic(fmt.Errorf("error en announce inicial: %w", err))
 	}
@@ -360,39 +359,68 @@ func main() {
 	}
 
 	// Conectar a peers del tracker
+	// Soportar tanto formato compact (string de bytes) como non-compact (lista de diccionarios)
+	var peerAddrs []string
+
 	if peersRaw, ok := trackerResponse["peers"].(string); ok {
+		// Formato compact: 6 bytes por peer (4 IP + 2 puerto)
 		data := []byte(peersRaw)
-		seen := make(map[string]struct{})
 		for i := 0; i < len(data); i += 6 {
 			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
 			port := binary.BigEndian.Uint16(data[i+4 : i+6])
 			addr := fmt.Sprintf("%s:%d", ip, port)
-			if _, dup := seen[addr]; dup {
-				fmt.Printf("Peer duplicado omitido: %s\n", addr)
-				continue
-			}
-			seen[addr] = struct{}{}
-			fmt.Printf("Peer: %s\n", addr)
-
-			var peerIdBytes [20]byte
-			copy(peerIdBytes[:], []byte(peerId))
-			pc, err := peerwire.NewPeerConn(addr, infoHash, peerIdBytes)
-			if err != nil {
-				fmt.Println("Error creando PeerConn:", err)
-				continue
-			}
-			defer pc.Close()
-			pc.BindManager(mgr)
-			if err := pc.Handshake(); err != nil {
-				fmt.Println("Handshake fallido:", err)
-				pc.Close()
-				continue
-			}
-			fmt.Println("Conectado al peer, handshake OK")
-			_ = pc.SendBitfield(store.Bitfield())
-			pc.SendMessage(peerwire.MsgInterested, nil)
-			go pc.ReadLoop()
+			peerAddrs = append(peerAddrs, addr)
 		}
+	} else if peersList, ok := trackerResponse["peers"].([]interface{}); ok {
+		// Formato non-compact: lista de diccionarios {"ip": "hostname", "port": 12345}
+		for _, peerRaw := range peersList {
+			if peerDict, ok := peerRaw.(map[string]interface{}); ok {
+				var ip string
+				var port int64
+
+				if ipVal, ok := peerDict["ip"].(string); ok {
+					ip = ipVal
+				}
+				if portVal, ok := peerDict["port"].(int64); ok {
+					port = portVal
+				}
+
+				if ip != "" && port > 0 {
+					addr := fmt.Sprintf("%s:%d", ip, port)
+					peerAddrs = append(peerAddrs, addr)
+				}
+			}
+		}
+	}
+
+	// Conectar a los peers encontrados
+	seen := make(map[string]struct{})
+	for _, addr := range peerAddrs {
+		if _, dup := seen[addr]; dup {
+			fmt.Printf("Peer duplicado omitido: %s\n", addr)
+			continue
+		}
+		seen[addr] = struct{}{}
+		fmt.Printf("Peer: %s\n", addr)
+
+		var peerIdBytes [20]byte
+		copy(peerIdBytes[:], []byte(peerId))
+		pc, err := peerwire.NewPeerConn(addr, infoHash, peerIdBytes)
+		if err != nil {
+			fmt.Println("Error creando PeerConn:", err)
+			continue
+		}
+		defer pc.Close()
+		pc.BindManager(mgr)
+		if err := pc.Handshake(); err != nil {
+			fmt.Println("Handshake fallido:", err)
+			pc.Close()
+			continue
+		}
+		fmt.Println("Conectado al peer, handshake OK")
+		_ = pc.SendBitfield(store.Bitfield())
+		pc.SendMessage(peerwire.MsgInterested, nil)
+		go pc.ReadLoop()
 	}
 
 	// Aceptar conexiones entrantes
@@ -444,7 +472,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				left := computeLeft()
-				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "", *externalIP)
+				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "", *hostnameFlag)
 				if err != nil {
 					fmt.Println("[ERROR] Announce periódico fallido:", err)
 				}
@@ -459,7 +487,7 @@ func main() {
 	go func() {
 		<-completedChan
 		fmt.Println("[INFO] Enviando event=completed al tracker...")
-		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed", *externalIP)
+		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed", *hostnameFlag)
 		if err != nil {
 			fmt.Println("[ERROR] No se pudo enviar completed:", err)
 		} else {
@@ -488,7 +516,7 @@ func main() {
 	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 	left := computeLeft()
 	downloaded := length - left
-	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped", *externalIP)
+	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped", *hostnameFlag)
 	if err != nil {
 		fmt.Println("[ERROR] No se pudo enviar stopped:", err)
 	} else {
