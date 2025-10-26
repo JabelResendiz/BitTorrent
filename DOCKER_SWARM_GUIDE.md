@@ -22,8 +22,8 @@
 docker run -it --rm \
   --name client1 \
   --network net \
-  -v ~/Desktop/volumen:/app/src/archives \
-  client12 \
+  -v ~/Desktop/peer1:/app/src/archives \
+  client \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
   --hostname="client1"

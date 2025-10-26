@@ -62,7 +62,7 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 			numwant = nw
 		}
 	}
-	hostname, _ := strconv.Unquote(vals.Get("hostname"))
+	hostname := vals.Get("hostname") // vals.Get() ya devuelve string limpio
 	// ip := clientIP(r, vals.Get("ip"))
 	// if ip == nil || ip.To4() == nil {
 	// 	t.failure(w, "ipv4 required")
