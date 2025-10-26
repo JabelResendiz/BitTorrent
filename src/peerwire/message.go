@@ -102,6 +102,15 @@ func (p *PeerConn) SendBitfield(bits []byte) error {
 	return p.SendMessage(MsgBitfiled, bits)
 }
 
+// SendBlockRequest envía un mensaje REQUEST para un bloque específico
+func (p *PeerConn) SendBlockRequest(index uint32, begin uint32, length uint32) error {
+	payload := make([]byte, 12)
+	binary.BigEndian.PutUint32(payload[0:4], index)
+	binary.BigEndian.PutUint32(payload[4:8], begin)
+	binary.BigEndian.PutUint32(payload[8:12], length)
+	return p.SendMessage(MsgRequest, payload)
+}
+
 // SendPiece sends a piece block with given index, begin and data
 func (p *PeerConn) SendPiece(index uint32, begin uint32, data []byte) error {
 	hdr := new(bytes.Buffer)

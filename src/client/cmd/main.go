@@ -142,14 +142,14 @@ func sendScrape(announceURL, infoHashEncoded string, infoHash [20]byte) {
 	incomplete, _ := stats["incomplete"].(int64)
 	downloaded, _ := stats["downloaded"].(int64)
 
-	fmt.Println("\n╔═══════════════════════════════════════╗")
-	fmt.Println("║     ESTADÍSTICAS DEL TRACKER          ║")
-	fmt.Println("╠═══════════════════════════════════════╣")
-	fmt.Printf("║ Seeders (completos):   %15d ║\n", complete)
-	fmt.Printf("║ Leechers (descargando): %14d ║\n", incomplete)
-	fmt.Printf("║ Descargas completadas:  %14d ║\n", downloaded)
-	fmt.Printf("║ Total peers:            %14d ║\n", complete+incomplete)
-	fmt.Println("╚═══════════════════════════════════════╝")
+	fmt.Println("\n========================================")
+	fmt.Println("      ESTADÍSTICAS DEL TRACKER           ")
+	fmt.Println("=========================================")
+	fmt.Printf(" Seeders (completos):   %15d \n", complete)
+	fmt.Printf(" Leechers (descargando): %14d \n", incomplete)
+	fmt.Printf(" Descargas completadas:  %14d \n", downloaded)
+	fmt.Printf(" Total peers:            %14d \n", complete+incomplete)
+	fmt.Println("=========================================")
 	fmt.Println()
 }
 

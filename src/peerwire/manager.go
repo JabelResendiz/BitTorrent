@@ -80,7 +80,8 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 				picker := NewPiecePicker()
 				piece := picker.NextPieceFor(p, p.manager.Store())
 				if piece >= 0 {
-					p.requestNextBlocks(piece)
+					// Usar descarga paralela Round-Robin en lugar de secuencial
+					p.manager.DownloadPieceParallel(piece)
 				} else {
 					fmt.Println("Nada que pedir a este peer")
 				}
@@ -138,51 +139,68 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		index := binary.BigEndian.Uint32(payload[0:4])
 		begin := binary.BigEndian.Uint32(payload[4:8])
 		block := payload[8:]
-		fmt.Printf("Recibido block de pieza %d, offset %d, tamaño %d bytes\n", index, begin, len(block))
-		// if attached to a manager with a store, persist block
+
+		// Log: Mostrar desde qué peer se recibió el bloque
+		peerAddr := "unknown"
+		if p.Conn != nil && p.Conn.RemoteAddr() != nil {
+			peerAddr = p.Conn.RemoteAddr().String()
+		}
+		blockNum := int(begin) / blockLen
+		fmt.Printf("✓ Recibido bloque %d de pieza %d desde peer %s (offset %d, tamaño %d bytes)\n",
+			blockNum, index, peerAddr, begin, len(block))
+
+		// Guardar bloque en el storage
 		if p.manager != nil && p.manager.Store() != nil {
 			if _, err := p.manager.Store().WriteBlock(int(index), int(begin), block); err != nil {
 				fmt.Println("Error guardando bloque:", err)
+				return
 			}
-			// Pedir siguiente bloque de la misma pieza si aún no completa
-			if !p.manager.Store().HasPiece(int(index)) {
-				// siguiente bloque
-				// Phase 1 naive: asumimos que vamos en begin=0 y luego bloque único
-				// Para progresar, pedimos el resto de la pieza si cabe
-				// calcular siguiente begin
-				nextBegin := int(begin) + len(block)
-				if p.curPiece == int(index) {
-					p.curOffset = nextBegin
-				}
-				plen := p.manager.Store().PieceLength()
-				if int(index) == p.manager.Store().NumPieces()-1 {
-					total := p.manager.Store().TotalLength()
-					plen = int(total - int64(p.manager.Store().PieceLength())*int64(p.manager.Store().NumPieces()-1))
-				}
-				if nextBegin < plen {
-					sz := blockLen
-					if nextBegin+sz > plen {
-						sz = plen - nextBegin
+
+			// Marcar bloque como recibido en el tracking Round-Robin
+			blockNum := int(begin) / blockLen
+			p.manager.downloadsMu.Lock()
+			if pd, exists := p.manager.pieceDownloads[int(index)]; exists {
+				// Incrementar contador de bloques recibidos desde este peer
+				pd.blocksReceived[peerAddr]++
+
+				delete(pd.blocksPending, blockNum)
+				delete(pd.blocksInProgress, blockNum)
+
+				// Verificar si la pieza está completa
+				if len(pd.blocksPending) == 0 {
+					// Mostrar estadísticas de descarga
+					fmt.Printf("\n═══════════════════════════════════════════════\n")
+					fmt.Printf("✓ Pieza %d completada (Round-Robin)\n", index)
+					fmt.Printf("═══════════════════════════════════════════════\n")
+					fmt.Printf("Distribución de bloques por peer:\n")
+					totalBlocks := 0
+					for pAddr, count := range pd.blocksReceived {
+						fmt.Printf("  • Peer %s: %d bloques\n", pAddr, count)
+						totalBlocks += count
 					}
-					var b bytes.Buffer
-					binary.Write(&b, binary.BigEndian, index)
-					binary.Write(&b, binary.BigEndian, uint32(nextBegin))
-					binary.Write(&b, binary.BigEndian, uint32(sz))
-					_ = p.SendMessage(MsgRequest, b.Bytes())
-				} else {
-					// pieza completada por tamaño; SHA-1 confirmará y manager hará HAVE broadcast
+					fmt.Printf("Total: %d bloques\n", totalBlocks)
+					fmt.Printf("═══════════════════════════════════════════════\n\n")
+
+					// Limpiar tracking
+					delete(p.manager.pieceDownloads, int(index))
 				}
-			} else {
-				// pieza completada, elegir otra si existe
+			}
+			p.manager.downloadsMu.Unlock()
+
+			// Si la pieza está verificada y completa, buscar siguiente pieza
+			if p.manager.Store().HasPiece(int(index)) {
+				// Pieza completa y verificada, elegir otra
 				picker := NewPiecePicker()
 				nxt := picker.NextPieceFor(p, p.manager.Store())
 				if nxt >= 0 {
 					p.curPiece = nxt
 					p.curOffset = 0
 					p.downloading = false
-					p.requestNextBlocks(nxt)
+					// Iniciar descarga paralela de la siguiente pieza
+					p.manager.DownloadPieceParallel(nxt)
 				} else {
 					p.downloading = false
+					fmt.Println("Descarga completada, no hay más piezas")
 				}
 			}
 		}
