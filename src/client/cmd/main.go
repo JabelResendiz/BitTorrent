@@ -166,6 +166,7 @@ func main() {
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio donde guardar/leer archivos")
 	externalIP := flag.String("external-ip", "", "IP externa para announces (requerido en Docker/NAT)")
+	port := flag.Int("port",6881,"Puerto de escucha")
 	flag.Parse()
 
 	if *torrentFlag == "" {
@@ -238,10 +239,14 @@ func main() {
 	peerId := generatePeerId()
 
 	// Abrir listener local (puerto asignado automáticamente)
-	ln, err := net.Listen("tcp", ":0")
+
+	ln, err := net.Listen("tcp",fmt.Sprintf(":%d",*port))
+	// ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		panic(err)
 	}
+
+
 	listenPort := ln.Addr().(*net.TCPAddr).Port
 	fmt.Println("Cliente escuchando en puerto:", listenPort)
 
