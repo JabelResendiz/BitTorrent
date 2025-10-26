@@ -32,7 +32,7 @@ func generatePeerId() string {
 }
 
 // sendAnnounce envía un announce al tracker y devuelve la respuesta decodificada
-func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploaded, downloaded, left int64, event string) (map[string]interface{}, error) {
+func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploaded, downloaded, left int64, event string, externalIP string) (map[string]interface{}, error) {
 	params := url.Values{
 		"peer_id":    []string{peerId},
 		"port":       []string{fmt.Sprintf("%d", port)},
@@ -41,6 +41,12 @@ func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploade
 		"left":       []string{fmt.Sprintf("%d", left)},
 		"compact":    []string{"1"},
 		"key":        []string{"jc12345"},
+	}
+
+	// Agregar IP externa si se proporciona (para Docker/NAT)
+	if externalIP != "" {
+		params.Set("ip", externalIP)
+		fmt.Printf("[ANNOUNCE] Usando IP externa: %s\n", externalIP)
 	}
 
 	// Solo agregar event si no está vacío
@@ -159,6 +165,7 @@ func main() {
 	// Flags: --torrent (obligatorio), --archives (opcional con default ./archives)
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio donde guardar/leer archivos")
+	externalIP := flag.String("external-ip", "", "IP externa para announces (requerido en Docker/NAT)")
 	flag.Parse()
 
 	if *torrentFlag == "" {
@@ -331,7 +338,7 @@ func main() {
 
 	// Enviar announce inicial con event=started
 	initialLeft := computeLeft()
-	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started")
+	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started", *externalIP)
 	if err != nil {
 		panic(fmt.Errorf("error en announce inicial: %w", err))
 	}
@@ -432,7 +439,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				left := computeLeft()
-				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "")
+				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "", *externalIP)
 				if err != nil {
 					fmt.Println("[ERROR] Announce periódico fallido:", err)
 				}
@@ -447,7 +454,7 @@ func main() {
 	go func() {
 		<-completedChan
 		fmt.Println("[INFO] Enviando event=completed al tracker...")
-		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed")
+		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed", *externalIP)
 		if err != nil {
 			fmt.Println("[ERROR] No se pudo enviar completed:", err)
 		} else {
@@ -476,7 +483,7 @@ func main() {
 	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 	left := computeLeft()
 	downloaded := length - left
-	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped")
+	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped", *externalIP)
 	if err != nil {
 		fmt.Println("[ERROR] No se pudo enviar stopped:", err)
 	} else {
