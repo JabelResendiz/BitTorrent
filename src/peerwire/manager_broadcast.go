@@ -93,6 +93,22 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 		return
 	}
 
+	// Verificar si ya se está descargando esta pieza (prevenir race condition)
+	m.downloadsMu.Lock()
+	if _, alreadyDownloading := m.pieceDownloads[pieceIndex]; alreadyDownloading {
+		m.downloadsMu.Unlock()
+		println("Pieza", pieceIndex, "ya está siendo descargada, omitiendo solicitud duplicada")
+		return
+	}
+	// Reservar la pieza inmediatamente para evitar duplicados
+	m.pieceDownloads[pieceIndex] = &PieceDownload{
+		pieceIndex:       pieceIndex,
+		blocksPending:    make(map[int]bool),
+		blocksInProgress: make(map[int]*PeerConn),
+		blocksReceived:   make(map[string]int),
+	}
+	m.downloadsMu.Unlock()
+
 	// PASO 1: Filtrar peers que tienen esta pieza y están unchoked
 	m.mu.RLock()
 	availablePeers := []*PeerConn{}
@@ -104,27 +120,23 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 	m.mu.RUnlock()
 
 	if len(availablePeers) == 0 {
+		// Limpiar reserva si no hay peers disponibles
+		m.downloadsMu.Lock()
+		delete(m.pieceDownloads, pieceIndex)
+		m.downloadsMu.Unlock()
 		println("No hay peers disponibles para pieza", pieceIndex)
 		return
 	}
 
 	println("Descargando pieza", pieceIndex, "desde", len(availablePeers), "peers en paralelo (Round-Robin)")
 
-	// PASO 2: Crear estructura de tracking para esta pieza
+	// PASO 2: Inicializar tracking de bloques
 	numBlocks := m.calculateNumBlocks(pieceIndex)
-	pd := &PieceDownload{
-		pieceIndex:       pieceIndex,
-		blocksPending:    make(map[int]bool),
-		blocksInProgress: make(map[int]*PeerConn),
-		blocksReceived:   make(map[string]int),
-	}
-
+	m.downloadsMu.Lock()
+	pd := m.pieceDownloads[pieceIndex]
 	for i := 0; i < numBlocks; i++ {
 		pd.blocksPending[i] = true
 	}
-
-	m.downloadsMu.Lock()
-	m.pieceDownloads[pieceIndex] = pd
 	m.downloadsMu.Unlock()
 
 	// PASO 3: Round-Robin - distribuir bloques entre peers
