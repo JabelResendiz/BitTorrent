@@ -157,10 +157,13 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 			sz = plen - offset
 		}
 
-		// Marcar peer como descargando esta pieza
+		// Marcar peer como descargando esta pieza (con lock para thread-safety)
 		peer.curPiece = pieceIndex
 		peer.downloading = true
+
+		m.downloadsMu.Lock()
 		pd.blocksInProgress[blockNum] = peer
+		m.downloadsMu.Unlock()
 
 		// Log: Mostrar desde qué peer se solicita el bloque
 		peerAddr := "unknown"
