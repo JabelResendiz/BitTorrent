@@ -46,7 +46,8 @@ docker run -it --rm \
   client12 \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
-  --external-ip="$HOST_IP"
+  --external-ip="$HOST_IP" \
+  --port=43629
 ```
 
 #### En MÁQUINA B (TANIA):
@@ -65,7 +66,8 @@ docker run -it --rm \
   client12 \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
-  --external-ip="$HOST_IP"
+  --external-ip="$HOST_IP" \
+  --port=37443
 ```
 
 ## ✅ Verificación
