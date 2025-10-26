@@ -1,10 +1,10 @@
-# Guía: Ejecutar Cliente BitTorrent en Docker Swarm
+# Guía: Ejecutar Cliente BitTorrent en Docker Swarm con DNS
 
 ## 🔍 Problema Resuelto
 
 **Antes:** Los clientes reportaban IPs internas de contenedor (`10.0.1.8`) que no eran accesibles entre nodos del swarm.
 
-**Ahora:** Los clientes reportan la IP del host usando el flag `--external-ip`, permitiendo conexiones peer-to-peer entre diferentes máquinas.
+**Ahora:** Los clientes usan **nombres de contenedor (hostnames)** que Docker Swarm resuelve automáticamente vía DNS interno. **No necesitas port mapping ni IPs del host.**
 
 ## 📋 Prerequisitos
 
@@ -15,72 +15,42 @@
 
 ## 🚀 Cómo Usar
 
-### Opción 1: Usando el Script (Recomendado)
+### Método Simple (Recomendado)
 
 ```bash
-# Hacer el script ejecutable
-chmod +x docker-run-client.sh
-
-# Ejecutar en MÁQUINA A (ejemplo: IP 192.168.1.10)
-./docker-run-client.sh 192.168.1.10 43629 client1
-
-# Ejecutar en MÁQUINA B (ejemplo: IP 192.168.1.20)
-./docker-run-client.sh 192.168.1.20 37443 client2
-```
-
-### Opción 2: Comando Manual
-
-#### En MÁQUINA A (ebur02):
-
-```bash
-# 1. Obtener IP del host
-HOST_IP=$(hostname -I | awk '{print $1}')
-echo "Mi IP: $HOST_IP"
-
-# 2. Ejecutar cliente
+# En MÁQUINA A
 docker run -it --rm \
   --name client1 \
   --network net \
-  -p 43629:43629 \
   -v ~/Desktop/volumen:/app/src/archives \
   client12 \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
-  --external-ip="$HOST_IP" \
-  --port=43629
-```
+  --hostname="client1"
 
-#### En MÁQUINA B (TANIA):
-
-```bash
-# 1. Obtener IP del host
-HOST_IP=$(hostname -I | awk '{print $1}')
-echo "Mi IP: $HOST_IP"
-
-# 2. Ejecutar cliente
+# En MÁQUINA B  
 docker run -it --rm \
   --name client2 \
   --network net \
-  -p 37443:37443 \
   -v ~/Desktop/volumen:/app/src/archives \
   client12 \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
-  --external-ip="$HOST_IP" \
-  --port=37443
+  --hostname="client2"
 ```
+
+**Nota:** Docker Swarm resolverá automáticamente `client1` y `client2` a las IPs correctas dentro de la red overlay.
 
 ## ✅ Verificación
 
 Después de ejecutar los clientes, deberías ver:
 
 ```
-[ANNOUNCE] Usando IP externa: 192.168.1.10
 [ANNOUNCE] Enviando event=started, left=4016308224
-Tracker responde: map[complete:1 incomplete:1 interval:1800 peers:...]
+Tracker responde: map[complete:1 incomplete:1 interval:1800 peers:[...]]
 
-Peer: 192.168.1.20:37443
-Conectado al peer, handshake OK  ← ✅ Conexión exitosa!
+Peer: client2:36891
+Conectado al peer, handshake OK  ← ✅ Conexión exitosa usando hostname!
 ```
 
 ## 🔧 Reconstruir Imagen del Cliente
@@ -101,60 +71,41 @@ Para ver si los clientes se registran correctamente:
 docker service logs tracker -f
 
 # Deberías ver:
-# event=started from 192.168.1.10 (ih=... pid=... left=...)
-# event=started from 192.168.1.20 (ih=... pid=... left=...)
+# event=started from client1 (ih=... pid=... left=...)
+# event=started from client2 (ih=... pid=... left=...)
 ```
 
 ## 🐛 Troubleshooting
 
+### Problema: "no such host" o "dial tcp: lookup client2"
+**Solución:** Asegúrate de que ambos contenedores están en la misma red overlay `net`
+
 ### Problema: "connection refused"
-**Solución:** Asegúrate de usar `-p <PORT>:<PORT>` y `--external-ip`
+**Solución:** Verifica que ambos clientes estén ejecutándose y hayan enviado announce al tracker
 
-### Problema: "port already in use"
-**Solución:** Usa un puerto diferente o detén el contenedor anterior
-
-### Problema: "no route to host"
-**Solución:** Verifica que ambas máquinas están en la misma red y pueden hacer ping
-
+### Problema: Tracker no responde
+**Solución:** Verifica que el servicio tracker está corriendo:
 ```bash
-# Desde MÁQUINA A
-ping 192.168.1.20
-
-# Desde MÁQUINA B
-ping 192.168.1.10
+docker service ls
+docker service ps tracker
 ```
 
 ## 📝 Notas Importantes
 
-1. **Port Mapping:** El puerto interno del contenedor debe coincidir con el puerto mapeado (`-p PORT:PORT`)
+1. **Sin Port Mapping:** No necesitas `-p` porque Docker Swarm maneja las conexiones internas
 
-2. **IP Externa:** Usa la IP de la interfaz de red que conecta ambas máquinas (no localhost ni 127.0.0.1)
+2. **Hostname Obligatorio:** Debes pasar `--hostname` con el mismo valor que `--name` del contenedor
 
-3. **Firewall:** Asegúrate de que los puertos estén abiertos en el firewall:
-   ```bash
-   sudo ufw allow <PORT>/tcp
-   ```
+3. **Red Overlay:** Todos los contenedores deben estar en la misma red overlay attachable
 
-4. **Obtener IP automáticamente:**
-   ```bash
-   # Linux
-   hostname -I | awk '{print $1}'
-   
-   # O con ip
-   ip route get 1 | awk '{print $7;exit}'
-   ```
+4. **DNS Interno:** Docker Swarm resuelve automáticamente los nombres de contenedor a IPs
 
-## 🎯 Alternativa: Network Host Mode
+5. **Formato Non-Compact:** El tracker detecta automáticamente si hay hostnames y usa formato non-compact
 
-Si tienes problemas, puedes usar `--network host` (más simple pero menos aislado):
+## 🎯 Ventajas de Esta Solución
 
-```bash
-docker run -it --rm \
-  --network host \
-  -v ~/Desktop/volumen:/app/src/archives \
-  client12 \
-  --torrent="/app/src/archives/vid.torrent" \
-  --archives="/app/src/archives"
-```
-
-**Nota:** En este modo NO necesitas `--external-ip` ni port mapping.
+✅ **Más simple:** No necesitas conocer las IPs de los hosts  
+✅ **Más robusto:** Si un contenedor se reinicia, el hostname sigue siendo el mismo  
+✅ **Cloud-native:** Aprovecha el DNS interno de Docker Swarm  
+✅ **Sin port mapping:** Las conexiones son directas entre contenedores  
+✅ **Compatible:** Sigue funcionando con IPs numéricas para clientes externos
