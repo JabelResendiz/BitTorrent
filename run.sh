@@ -1,21 +1,21 @@
 #!/bin/bash
-# Script para reconstruir y actualizar el tracker en Docker Swarm
 
-set -e  # Salir si cualquier comando falla
+set -e  
 
-
+# VARIABLES GLOBALES
 TRACKER_IMAGE="tracker_img:latest"
-TRACKER_CONTAINER ="tracker"
+TRACKER_CONTAINER="tracker"
 CLIENT_IMAGE="client_img:latest"
 CLIENT_CONTAINER="client"
 
 TRACKER_PORT="8081:8080"
 
-VOLUME_PATH ="~/Desktop/volumen"
-ARCHIVES_PATH
-HOSTNAME ="client2"
+VOLUME_PATH="$HOME/Desktop/volumen"
+HOSTNAME="client2"
 
 NETWORK_NAME="net"
+
+#####
 
 if ! docker network ls | grep -q "$NETWORK_NAME"; then
   echo "Creando red overlay '$NETWORK_NAME'..."
@@ -23,11 +23,11 @@ if ! docker network ls | grep -q "$NETWORK_NAME"; then
 fi
 
 
-echo "🔨 Reconstruyendo imagen del tracker..."
+echo "🔨 Construyendo imagen del tracker..."
 cd src
 docker build -t "$TRACKER_IMAGE" -f tracker/Dockerfile .
 
-echo "🔨 Reconstruyendo imagen del client..."
+echo "🔨 Construyendo imagen del client..."
 cd src
 docker build -t "$CLIENT_IMAGE" -f client/Dockerfile .
 
@@ -41,7 +41,7 @@ docker run -it --rm \
   "$CLIENT_IMAGE" \
   --torrent="/app/src/archives/vid.torrent" \
   --archives="/app/src/archives" \
-  --hostname=""$HOSTNAME""
+  --hostname="$HOSTNAME"
 
 
 echo ""
