@@ -17,7 +17,6 @@ func (p *PeerConn) requestNextBlocks(piece int) {
 	plen := store.PieceLength()
 	// last piece size
 	if piece == store.NumPieces()-1 {
-		// compute actual last piece size
 		total := store.TotalLength()
 		plen = int(total - int64(store.PieceLength())*int64(store.NumPieces()-1))
 	}
@@ -66,7 +65,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	case MsgChoke:
 		p.PeerChoking = true
 	case MsgInterested:
-		// Remote indicates it's interested in our pieces: unchoke so it can request
 		p.PeerInterested = true
 		_ = p.SendMessage(MsgUnchoke, nil)
 	case MsgNotInterested:
@@ -75,12 +73,10 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		p.PeerChoking = false
 		fmt.Println("Peer te unchokeo. Buscando pieza a solicitar...")
 		if p.manager != nil && p.manager.Store() != nil {
-			// evitar duplicar arranques si ya estamos descargando algo
 			if !p.downloading {
 				picker := NewPiecePicker()
 				piece := picker.NextPieceFor(p, p.manager.Store())
 				if piece >= 0 {
-					// Usar descarga paralela Round-Robin en lugar de secuencial
 					p.manager.DownloadPieceParallel(piece)
 				} else {
 					fmt.Println("Nada que pedir a este peer")
@@ -90,11 +86,9 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	case MsgHave:
 		index := binary.BigEndian.Uint32(payload)
 		fmt.Println("Peer tiene pieza:", index)
-		// update remote bitfield lazily
 		if p.manager != nil && p.manager.Store() != nil {
 			n := p.manager.Store().NumPieces()
 			if int(index) < n {
-				// ensure remoteBF allocated
 				exp := (n + 7) / 8
 				if len(p.remoteBF) != exp {
 					p.remoteBF = make([]byte, exp)
@@ -105,7 +99,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 			}
 		}
 	case MsgBitfiled:
-		// Validate and store remote bitfield
 		if p.manager != nil && p.manager.Store() != nil {
 			exp := (p.manager.Store().NumPieces() + 7) / 8
 			if len(payload) != exp {
@@ -115,7 +108,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		}
 		p.UpdateRemoteBitfield(payload)
 		fmt.Println("Bitfield inicial recibido")
-		// Decide si estamos interesados: el remoto tiene alguna pieza que nos falte
 		if p.manager != nil && p.manager.Store() != nil {
 			haveInterest := false
 			n := p.manager.Store().NumPieces()
@@ -160,7 +152,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 			blockNum := int(begin) / blockLen
 			p.manager.downloadsMu.Lock()
 			if pd, exists := p.manager.pieceDownloads[int(index)]; exists {
-				// Incrementar contador de bloques recibidos desde este peer
 				pd.blocksReceived[peerAddr]++
 
 				delete(pd.blocksPending, blockNum)
@@ -168,7 +159,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 
 				// Verificar si la pieza está completa
 				if len(pd.blocksPending) == 0 {
-					// Mostrar estadísticas de descarga
 					fmt.Printf("\n═══════════════════════════════════════════════\n")
 					fmt.Printf("✓ Pieza %d completada (Round-Robin)\n", index)
 					fmt.Printf("═══════════════════════════════════════════════\n")
@@ -189,14 +179,12 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 
 			// Si la pieza está verificada y completa, buscar siguiente pieza
 			if p.manager.Store().HasPiece(int(index)) {
-				// Pieza completa y verificada, elegir otra
 				picker := NewPiecePicker()
 				nxt := picker.NextPieceFor(p, p.manager.Store())
 				if nxt >= 0 {
 					p.curPiece = nxt
 					p.curOffset = 0
 					p.downloading = false
-					// Iniciar descarga paralela de la siguiente pieza
 					p.manager.DownloadPieceParallel(nxt)
 				} else {
 					p.downloading = false
@@ -205,7 +193,6 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 			}
 		}
 	case MsgRequest:
-		// Upload path: responder con MsgPiece leyendo del store
 		if len(payload) != 12 {
 			return
 		}

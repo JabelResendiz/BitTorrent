@@ -18,7 +18,7 @@ func (p *PeerConn) Handshake() error {
 
 	buf.WriteByte(pstrlen)
 	buf.WriteString(pstr)
-	buf.Write(make([]byte, 8)) // reservar 8 bytes
+	buf.Write(make([]byte, 8))
 	buf.Write(p.InfoHash[:])
 	buf.Write(p.PeerId[:])
 
@@ -52,7 +52,7 @@ func (p *PeerConn) SendHandshakeOnly() error {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(pstrlen)
 	buf.WriteString(pstr)
-	buf.Write(make([]byte, 8)) // bytes reservados
+	buf.Write(make([]byte, 8))
 	buf.Write(p.InfoHash[:])
 	buf.Write(p.PeerId[:])
 	if _, err := p.Conn.Write(buf.Bytes()); err != nil {

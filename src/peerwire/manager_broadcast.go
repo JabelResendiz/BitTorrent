@@ -49,9 +49,7 @@ func (m *Manager) BroadcastHave(index int) {
 		peers = append(peers, p)
 	}
 	m.mu.RUnlock()
-	// debug log
-	// Note: keep it simple; avoid import cycles by not using log package here.
-	// The client will see this on stdout.
+	
 	println("Broadcast HAVE a", len(peers), "peers. Pieza", index)
 	for _, p := range peers {
 		_ = p.SendHave(uint32(index))
