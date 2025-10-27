@@ -754,4 +754,3 @@ if piezaCompleta {
 
 ---
 
-¿Te gustaría que profundice en algún algoritmo específico o que implemente alguna de estas mejoras? 🚀
