@@ -33,4 +33,7 @@ go.work.sum
 
 # DB files
 tracker_data.json
-download.data
+archives
+
+SR.torrent
+#vid.torrent
