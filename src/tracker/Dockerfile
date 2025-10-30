@@ -14,6 +14,6 @@ COPY . .
 # Compila solo el tracker
 RUN go build -o tracker2 ./tracker/cmd
 
-EXPOSE 8080
+EXPOSE 2377
 
 CMD ["./tracker2"]

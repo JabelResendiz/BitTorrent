@@ -37,25 +37,6 @@ func (p *PeerConn) SendMessage(id byte, payload []byte) error {
 	return err
 }
 
-// func WriteMessage(w io.Writer, id byte, payload []byte) error {
-// 	length := uint32(1 + len(payload))
-// 	if id == 255 { // keep-alive indicator, we'll use id=255 to mean none
-// 	  length = 0
-// 	  return binary.Write(w, binary.BigEndian, length) // keep-alive
-// 	}
-// 	if err := binary.Write(w, binary.BigEndian, length); err != nil {
-// 	  return err
-// 	}
-// 	if err := binary.Write(w, binary.BigEndian, id); err != nil {
-// 	  return err
-// 	}
-// 	if len(payload) > 0 {
-// 	  _, err := w.Write(payload)
-// 	  return err
-// 	}
-// 	return nil
-//   }
-
 // funcion para leer mesnaje del peer
 func (p *PeerConn) ReadMessage() (id byte, payload []byte, err error) {
 	var length uint32
@@ -88,7 +69,7 @@ func (p *PeerConn) SendBitfield(bits []byte) error {
 	if len(bits) == 0 {
 		return nil
 	}
-	// don't send if all zeros (no piezas): es válido omitir el bitfield
+
 	allZero := true
 	for _, b := range bits {
 		if b != 0 {
@@ -100,4 +81,33 @@ func (p *PeerConn) SendBitfield(bits []byte) error {
 		return nil
 	}
 	return p.SendMessage(MsgBitfiled, bits)
+}
+
+// SendBlockRequest sends a REQUEST message for a specific block
+func (p *PeerConn) SendBlockRequest(index uint32, begin uint32, length uint32) error {
+	payload := make([]byte, 12)
+	binary.BigEndian.PutUint32(payload[0:4], index)
+	binary.BigEndian.PutUint32(payload[4:8], begin)
+	binary.BigEndian.PutUint32(payload[8:12], length)
+	return p.SendMessage(MsgRequest, payload)
+}
+
+// SendPiece sends a piece block with given index, begin and data
+func (p *PeerConn) SendPiece(index uint32, begin uint32, data []byte) error {
+	hdr := new(bytes.Buffer)
+	total := uint32(9 + len(data))
+	if err := binary.Write(hdr, binary.BigEndian, total); err != nil {
+		return err
+	}
+	hdr.WriteByte(MsgPiece)
+	if err := binary.Write(hdr, binary.BigEndian, index); err != nil {
+		return err
+	}
+	if err := binary.Write(hdr, binary.BigEndian, begin); err != nil {
+		return err
+	}
+	if _, err := p.Conn.Write(append(hdr.Bytes(), data...)); err != nil {
+		return err
+	}
+	return nil
 }

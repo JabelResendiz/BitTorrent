@@ -1,6 +1,5 @@
 package tracker
 
-
 //tracker/anounce.go
 
 import (
@@ -63,18 +62,18 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 			numwant = nw
 		}
 	}
-
-	ip := clientIP(r, vals.Get("ip"))
-	if ip == nil || ip.To4() == nil {
-		t.failure(w, "ipv4 required")
-		return
-	}
+	hostname := vals.Get("hostname") // vals.Get() ya devuelve string limpio
+	// ip := clientIP(r, vals.Get("ip"))
+	// if ip == nil || ip.To4() == nil {
+	// 	t.failure(w, "ipv4 required")
+	// 	return
+	// }
 
 	infoHex, _ := Bytes20ToHex(infoHash)
 	peerHex, _ := Bytes20ToHex(peerID)
 	now := time.Now()
 
-	log.Printf("announce from %s ih=%s pid=%s port=%d", ip.String(), infoHex[:8], peerHex[:8], port64)
+	log.Printf("announce from %s ih=%s pid=%s port=%d", hostname, infoHex[:8], peerHex[:8], port64)
 
 	// Determinar si el peer es seeder
 	completed := left == 0
@@ -82,23 +81,58 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 	// event handling: stopped => eliminar; completed/started/empty => alta/refresh
 	switch event {
 	case "stopped":
+		log.Printf("event=stopped from %s (ih=%s pid=%s)", hostname, infoHex[:8], peerHex[:8])
 		_ = t.SaveOnChange(func() { t.RemovePeer(infoHex, peerHex) })
+
+	case "started":
+		log.Printf("event=started from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed, now) })
+
+	case "completed":
+		log.Printf("event=completed from %s (ih=%s pid=%s) - peer is now seeder!", hostname, infoHex[:8], peerHex[:8])
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), true, now) })
+
 	default:
-		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, ip, uint16(port64), completed, now) })
+		// Announce regular sin evento (periódico)
+		log.Printf("periodic announce from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed, now) })
 	}
 
 	// Build peer list excluding requester
 	peers := t.GetPeers(infoHex, peerHex, numwant)
-	compactResp := compactPeers(peers)
+
+	// Determinar si usar formato compact o non-compact
+	// Si algún peer tiene hostname (no es IP numérica), usar non-compact
+	useNonCompact := false
+	for _, p := range peers {
+		if net.ParseIP(p.HostName).To4() == nil && p.HostName != "" {
+			useNonCompact = true
+			break
+		}
+	}
 
 	// Contadores de seeds/leechers (complete/incomplete) para compatibilidad
 	comp, incomp := t.CountPeers(infoHex)
 	reply := map[string]interface{}{
 		"interval":   int64(t.Interval.Seconds()),
-		"peers":      compactResp,
 		"complete":   int64(comp),
 		"incomplete": int64(incomp),
 	}
+
+	if useNonCompact {
+		// Formato non-compact: lista de diccionarios
+		// Convertir []map[string]interface{} a []interface{} para el encoder
+		peersList := nonCompactPeers(peers)
+		peersInterface := make([]interface{}, len(peersList))
+		for i, p := range peersList {
+			peersInterface[i] = p
+		}
+		reply["peers"] = peersInterface
+	} else {
+		// Formato compact: string de bytes
+		reply["peers"] = compactPeers(peers)
+	}
+
 	data := bencode.Encode(relySafe(reply))
 	w.Header().Set("Content-Type", "application/x-bittorrent")
 	w.WriteHeader(http.StatusOK)
@@ -134,6 +168,24 @@ func compactPeers(peers []*Peer) string {
 		b = append(b, port[0], port[1])
 	}
 	return string(b)
+}
+
+// nonCompactPeers construye la representación "non-compact" de la lista de peers,
+// devolviendo una lista de diccionarios con peer_id, ip (hostname), y port.
+func nonCompactPeers(peers []*Peer) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(peers))
+	for _, p := range peers {
+		peerDict := map[string]interface{}{
+			"ip":   p.HostName, // Usar hostname para Docker Swarm DNS
+			"port": int64(p.Port),
+		}
+		// peer_id es opcional en el protocolo BitTorrent
+		if p.PeerIDHex != "" {
+			peerDict["peer id"] = p.PeerIDHex
+		}
+		result = append(result, peerDict)
+	}
+	return result
 }
 
 // raw20 extrae un parámetro de la query cruda, aplica percent-unescape y valida

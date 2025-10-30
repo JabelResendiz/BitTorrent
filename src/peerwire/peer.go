@@ -14,6 +14,11 @@ type PeerConn struct {
 
 	// remote bitfield (as advertised by the peer). Length should be ceil(NumPieces/8)
 	remoteBF []byte
+
+	// simple per-peer download state (phase 1)
+	curPiece    int // -1 if none
+	curOffset   int // next offset within curPiece to request
+	downloading bool
 }
 
 func (p *PeerConn) Close() {
