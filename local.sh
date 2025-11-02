@@ -6,15 +6,10 @@ set -e
 TRACKER_IMAGE="tracker_img:latest"
 TRACKER_CONTAINER="tracker"
 CLIENT_IMAGE="client_img:latest"
-# CLIENT_CONTAINER1="client1"
-# CLIENT_CONTAINER2="client2"
+
 
 TRACKER_PORT="8081:8080"
 
-# VOLUME_PATH1="$HOME/jabel/volumen1"
-# VOLUME_PATH2="$HOME/jabel/volumen2"
-# HOSTNAME2="client2"
-# HOSTNAME2="client1"
 NETWORK_NAME="net"
 
 CLIENT_COUNT=${1:-3}
@@ -71,29 +66,6 @@ for ((i=1;i<$CLIENT_COUNT;i++)); do
 
 done
 
-
-
-
-
-
-
-# docker run -it --rm \
-#   --name "$CLIENT_CONTAINER1" \
-#   --network "$NETWORK_NAME" \
-#   -v "$VOLUME_PATH":/app/src/archives \
-#   "$CLIENT_IMAGE" \
-#   --torrent="/app/src/archives/video.torrent" \
-#   --archives="/app/src/archives" \
-#   --hostname="$HOSTNAME1"
-
-# docker run -it --rm \
-#   --name "$CLIENT_CONTAINER2" \
-#   --network "$NETWORK_NAME" \
-#   -v "$VOLUME_PATH":/app/src/archives \
-#   "$CLIENT_IMAGE" \
-#   --torrent="/app/src/archives/video.torrent" \
-#   --archives="/app/src/archives" \
-#   --hostname="$HOSTNAME2"
 
 echo ""
 echo "✅ Tracker actualizado correctamente!"
