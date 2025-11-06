@@ -5,24 +5,51 @@ import (
     "net/http"
 )
 
+var apilog = NewLogger("API")
+
 func Start(store *Store) {
+
+	apilog.Info("Starting HTTP server on port 8080")
+
     http.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
-        var rec Record
-        json.NewDecoder(r.Body).Decode(&rec)
+        apilog.Debug("Received /add request")
+		var rec Record
+        
+		if err := json.NewDecoder(r.Body).Decode(&rec); err != nil {
+            http.Error(w, "invalid request body", http.StatusBadRequest)
+            apilog.Error("Failed to decode JSON: %v", err)
+            return
+        }
+		
+		// json.NewDecoder(r.Body).Decode(&rec)
         store.Add(rec)
         w.Write([]byte("ok"))
     })
 
     http.HandleFunc("/del", func(w http.ResponseWriter, r *http.Request) {
+		apilog.Debug("Received /del request")
         var data map[string]string
-        json.NewDecoder(r.Body).Decode(&data)
+
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+            http.Error(w, "invalid request body", http.StatusBadRequest)
+            apilog.Error("Failed to decode JSON: %v", err)
+            return
+        }
+
+        // json.NewDecoder(r.Body).Decode(&data)
+
         store.Delete(data["name"])
+
         w.Write([]byte("deleted"))
     })
 
     http.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
+		apilog.Debug("Received /list request")
         json.NewEncoder(w).Encode(store.List())
     })
 
-    http.ListenAndServe(":8080", nil)
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+        apilog.Error("HTTP server failed: %v", err)
+    }
+    // http.ListenAndServe(":8080", nil)
 }

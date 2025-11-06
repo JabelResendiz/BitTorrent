@@ -1,15 +1,22 @@
+
+// dns_handler.go
+// This module implements a minimal DNS server over UDP.
+// It listens for DNS queries, parses the request, look up local records,
+// and response with either the IP address or NXDOMAIN
+// It handles basic A records and includes TTL in the responses. 
+
 package internal
 
 import (
     "bytes"
     "encoding/binary"
-    "log"
     "net"
     "strings"
 	"fmt"
 )
 
-// Estructura DNS mínima: header + pregunta + respuesta
+var dnslog = NewLogger("HEADER")
+
 type Header struct {
     ID      uint16
     Flags   uint16
@@ -19,41 +26,58 @@ type Header struct {
     ARCount uint16
 }
 
+
+// StartUDP starts a UDP server to listen for DNS queries
 func StartUDP(store *Store, listenAddr string) {
     addr, err := net.ResolveUDPAddr("udp", listenAddr)
     if err != nil {
-        log.Fatal(err)
+        dnslog.Error("Failed to resolve UDP address %s: %v", listenAddr,err)
+		return 
     }
     conn, err := net.ListenUDP("udp", addr)
     if err != nil {
-        log.Fatal(err)
+        dnslog.Error("Failed to listen on UDP %s: %v", listenAddr, err)
+		return
     }
     defer conn.Close()
+
+	dnslog.Info("DNS UDP server listening on %s", listenAddr)
+
     buf := make([]byte, 512)
     for {
         n, clientAddr, err := conn.ReadFromUDP(buf)
         if err != nil {
+			dnslog.Warn("Error reading from UDP: %v", err)
             continue
         }
         go handleQuery(conn, clientAddr, buf[:n], store)
     }
 }
 
+
+// handleQuery parses the query and sends a response
 func handleQuery(conn *net.UDPConn, client *net.UDPAddr, data []byte, store *Store) {
     if len(data) < 12 {
+		dnslog.Warn("Received invalid DNS packet (too short) from %s", client)
         return
     }
     id := binary.BigEndian.Uint16(data[0:2])
     qname, _ := parseQName(data[12:])
-
-    if rec, ok := store.Get(strings.ToLower(qname)); ok {
+	lookupName := strings.TrimSuffix(strings.ToLower(qname), ".")
+	
+	dnslog.Info("Received query for %s from %s", lookupName,client)
+    if rec, ok := store.Get(lookupName); ok {
         resp := buildResponse(id, qname, rec.IP)
         conn.WriteToUDP(resp, client)
+		dnslog.Info("Response with IP %s for %s", rec.IP,qname)
     } else {
         conn.WriteToUDP(buildNX(id), client)
+		dnslog.Info("Responded NXDOMAIN for %s", qname)
     }
 }
 
+
+// parseQname parses the domain name from DNs query format
 func parseQName(data []byte) (string, int) {
     var labels []string
     i := 0
@@ -69,6 +93,8 @@ func parseQName(data []byte) (string, int) {
     return strings.Join(labels, ".") + ".", i
 }
 
+
+// buildResponse constructs a minimal DNS response for A records
 func buildResponse(id uint16, name, ip string) []byte {
     buf := new(bytes.Buffer)
     binary.Write(buf, binary.BigEndian, id)
@@ -95,6 +121,8 @@ func buildResponse(id uint16, name, ip string) []byte {
     return buf.Bytes()
 }
 
+
+// constructs a minimal NXDOMAIN response
 func buildNX(id uint16) []byte {
     buf := new(bytes.Buffer)
     binary.Write(buf, binary.BigEndian, id)
@@ -106,6 +134,7 @@ func buildNX(id uint16) []byte {
     return buf.Bytes()
 }
 
+// writes a DNS domain name in the proper format
 func writeQName(buf *bytes.Buffer, name string) {
     for _, part := range strings.Split(strings.TrimSuffix(name, "."), ".") {
         buf.WriteByte(byte(len(part)))
