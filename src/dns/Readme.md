@@ -1,6 +1,16 @@
 # BIBLIOGRAFÍA
 
-# IMPLEMENTACIÓN DE UN SERVIDOR DE DNS DISTRIBUIDO
+```bash
+cd src/dns
+go run cmd/main.go
+
+chmod +x add_records.sh
+./add_records.sh
+
+curl -s -X POST "http://localhost:8080/add" -H 'Content-Type: application/json' -d '{"name":"free.local","ip":"10.1.0.15","ttl":360}'
+
+dig @127.0.0.1 -p 8053 free.local
+```
 
 ## REDES OVERLAY EN DOCKER SWARM
 
