@@ -7,7 +7,7 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 
-API_URL="http://localhost:8080/add"
+API_URL="http://localhost:6969/add"
 BASE_NAMES=("free.local" "db.local" "cache.local" "api.local")
 BASE_IPS=("10.1.0.15" "10.1.0.16" "10.1.0.17" "10.1.0.18")
 TTL=360
