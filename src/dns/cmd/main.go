@@ -42,6 +42,6 @@ func main() {
 		internal.StartGossip(peers, s)
 	}()
 	
-	log.Info("Starting API on :8080")
+	log.Info("Starting API on :6969")
 	internal.Start(s)
 }

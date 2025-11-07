@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 	"src/tracker"
+	"src/dns"
 )
 
 func main() {
@@ -48,6 +49,20 @@ func main() {
 			}
 		}
 	}()
+	
+
+	// IP del tracker y nombre DNS que quieres usar
+	trackerIP := "127.0.0.1"         
+	trackerName := "tracker"   
+	dnsAPI := "127.0.0.1:6969"  
+
+	// Registrar en DNS
+	if err := dns.RegisterInDNS(trackerName, trackerIP, dnsAPI); err != nil {
+		log.Printf("failed to register tracker in DNS: %v", err)
+	} else {
+		log.Printf("tracker registered in DNS as %s -> %s", trackerName, trackerIP)
+	}
+
 
 	// Arranca el servidor HTTP del tracker.
 	log.Printf("tracker listening on %s interval=%ds data=%s", *listen, *interval, *data)

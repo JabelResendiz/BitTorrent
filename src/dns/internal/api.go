@@ -1,3 +1,5 @@
+//internal/api.go
+
 package internal
 
 import (
@@ -9,7 +11,7 @@ var apilog = NewLogger("API")
 
 func Start(store *Store) {
 
-	apilog.Info("Starting HTTP server on port 8080")
+	apilog.Info("Starting HTTP server on port 6969")
 
     http.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
         apilog.Debug("Received /add request")
@@ -48,7 +50,7 @@ func Start(store *Store) {
         json.NewEncoder(w).Encode(store.List())
     })
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":6969", nil); err != nil {
         apilog.Error("HTTP server failed: %v", err)
     }
     // http.ListenAndServe(":8080", nil)

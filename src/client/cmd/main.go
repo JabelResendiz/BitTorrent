@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -23,7 +22,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"src/dns"
 )
+
+var httpclient = dns.ResolveCustomHTTPClient("127.0.0.1:8053")
 
 func generatePeerId() string {
 	buf := make([]byte, 6)
@@ -70,8 +72,8 @@ func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploade
 		fmt.Printf("[ANNOUNCE] Enviando announce periódico, left=%d\n", left)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(fullURL)
+	//client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpclient.Get(fullURL)
 	if err != nil {
 		return nil, fmt.Errorf("error en request: %w", err)
 	}
@@ -111,8 +113,8 @@ func sendScrape(announceURL, infoHashEncoded string, infoHash [20]byte) {
 
 	fmt.Println("[SCRAPE] Obteniendo estadísticas del tracker...")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(fullURL)
+	//client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpclient.Get(fullURL)
 	if err != nil {
 		fmt.Println("[SCRAPE] Error:", err)
 		return
