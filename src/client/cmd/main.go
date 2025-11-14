@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"src/bencode"
+	overlay "src/overlay"
 	"src/peerwire"
 	"strings"
 	"sync"
@@ -173,6 +174,9 @@ func main() {
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio donde guardar/leer archivos")
 	hostnameFlag := flag.String("hostname", "", "nombre de host para announces (requerido en Docker/NAT)")
+	discoveryFlag := flag.String("discovery-mode", "tracker", "discovery mode: tracker|overlay")
+	bootstrapFlag := flag.String("bootstrap", "", "comma-separated bootstrap peers para overlay (host:port)")
+	overlayPortFlag := flag.Int("overlay-port", 6000, "puerto donde escucha el overlay (TCP)")
 	flag.Parse()
 
 	if *torrentFlag == "" {
@@ -254,6 +258,29 @@ func main() {
 
 	listenPort := ln.Addr().(*net.TCPAddr).Port
 	fmt.Println("Cliente escuchando en puerto:", listenPort)
+
+	// Inicializar overlay si se solicitó
+	var ov *overlay.Overlay
+	if *discoveryFlag == "overlay" {
+		// parse bootstrap list
+		var peers []string
+		if *bootstrapFlag != "" {
+			for _, p := range strings.Split(*bootstrapFlag, ",") {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					peers = append(peers, p)
+				}
+			}
+		}
+		listenAddr := fmt.Sprintf(":%d", *overlayPortFlag)
+		ov = overlay.NewOverlay(listenAddr, peers)
+		if err := ov.Start(); err != nil {
+			fmt.Println("No se pudo iniciar overlay:", err)
+			ov = nil
+		} else {
+			fmt.Println("Overlay gossip iniciado en", listenAddr)
+		}
+	}
 
 	// Nombre de salida y rutas
 	outName := "archivo.bin"
@@ -347,53 +374,75 @@ func main() {
 	}
 
 	// Enviar announce inicial con event=started
-	initialLeft := computeLeft()
-	trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started", *hostnameFlag)
-	if err != nil {
-		panic(fmt.Errorf("error en announce inicial: %w", err))
-	}
-	fmt.Println("Tracker responde:", trackerResponse)
-
-	// Hacer scrape para obtener estadísticas del torrent
-	sendScrape(announce, infoHashEncoded, infoHash)
-
-	// Extraer intervalo del tracker (por defecto 30 minutos)
+	// If overlay is active, announce locally and skip tracker
+	var trackerResponse map[string]interface{}
 	trackerInterval := 1800 * time.Second
-	if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
-		trackerInterval = time.Duration(intervalRaw) * time.Second
-		fmt.Printf("Intervalo de announces: %v\n", trackerInterval)
+	initialLeft := computeLeft()
+	//trackerResponse, err := sendAnnounce(announce, infoHashEncoded, peerId,listenPort,0,0,initalLeft,"started",*hostnameFlag)
+
+	host := *hostnameFlag
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	providerAddr := fmt.Sprintf("%s:%d", host, listenPort)
+	if ov != nil {
+		ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: initialLeft})
+		fmt.Println("Announced to overlay, left=", initialLeft)
+		// keep default trackerInterval
+	} else {
+		initialLeft := computeLeft()
+		trackerResponse, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, initialLeft, "started", *hostnameFlag)
+		if err != nil {
+			panic(fmt.Errorf("error en announce inicial: %w", err))
+		}
+		fmt.Println("Tracker responde:", trackerResponse)
+
+		// Hacer scrape para obtener estadísticas del torrent
+		sendScrape(announce, infoHashEncoded, infoHash)
+
+		// Extraer intervalo del tracker (por defecto 30 minutos)
+		if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
+			trackerInterval = time.Duration(intervalRaw) * time.Second
+			fmt.Printf("Intervalo de announces: %v\n", trackerInterval)
+		} // trackerInterval := 1800*time.Second
 	}
 
-	// Conectar a peers del tracker
+	// Conectar a peers (desde tracker o overlay)
 	// Soportar tanto formato compact (string de bytes) como non-compact (lista de diccionarios)
 	var peerAddrs []string
-
-	if peersRaw, ok := trackerResponse["peers"].(string); ok {
-		// Formato compact: 6 bytes por peer (4 IP + 2 puerto)
-		data := []byte(peersRaw)
-		for i := 0; i < len(data); i += 6 {
-			ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
-			port := binary.BigEndian.Uint16(data[i+4 : i+6])
-			addr := fmt.Sprintf("%s:%d", ip, port)
-			peerAddrs = append(peerAddrs, addr)
+	if ov != nil {
+		provs := ov.Lookup(infoHashEncoded, 50)
+		for _, p := range provs {
+			peerAddrs = append(peerAddrs, p.Addr)
 		}
-	} else if peersList, ok := trackerResponse["peers"].([]interface{}); ok {
-		// Formato non-compact: lista de diccionarios {"ip": "hostname", "port": 12345}
-		for _, peerRaw := range peersList {
-			if peerDict, ok := peerRaw.(map[string]interface{}); ok {
-				var ip string
-				var port int64
+	} else {
+		if peersRaw, ok := trackerResponse["peers"].(string); ok {
+			// Formato compact: 6 bytes por peer (4 IP + 2 puerto)
+			data := []byte(peersRaw)
+			for i := 0; i < len(data); i += 6 {
+				ip := fmt.Sprintf("%d.%d.%d.%d", data[i], data[i+1], data[i+2], data[i+3])
+				port := binary.BigEndian.Uint16(data[i+4 : i+6])
+				addr := fmt.Sprintf("%s:%d", ip, port)
+				peerAddrs = append(peerAddrs, addr)
+			}
+		} else if peersList, ok := trackerResponse["peers"].([]interface{}); ok {
+			// Formato non-compact: lista de diccionarios {"ip": "hostname", "port": 12345}
+			for _, peerRaw := range peersList {
+				if peerDict, ok := peerRaw.(map[string]interface{}); ok {
+					var ip string
+					var port int64
 
-				if ipVal, ok := peerDict["ip"].(string); ok {
-					ip = ipVal
-				}
-				if portVal, ok := peerDict["port"].(int64); ok {
-					port = portVal
-				}
+					if ipVal, ok := peerDict["ip"].(string); ok {
+						ip = ipVal
+					}
+					if portVal, ok := peerDict["port"].(int64); ok {
+						port = portVal
+					}
 
-				if ip != "" && port > 0 {
-					addr := fmt.Sprintf("%s:%d", ip, port)
-					peerAddrs = append(peerAddrs, addr)
+					if ip != "" && port > 0 {
+						addr := fmt.Sprintf("%s:%d", ip, port)
+						peerAddrs = append(peerAddrs, addr)
+					}
 				}
 			}
 		}
@@ -478,9 +527,14 @@ func main() {
 			select {
 			case <-ticker.C:
 				left := computeLeft()
-				_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "", *hostnameFlag)
-				if err != nil {
-					fmt.Println("[ERROR] Announce periódico fallido:", err)
+				if ov != nil {
+					// announce into overlay
+					ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: left})
+				} else {
+					_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, 0, left, "", *hostnameFlag)
+					if err != nil {
+						fmt.Println("[ERROR] Announce periódico fallido:", err)
+					}
 				}
 
 			case <-shutdownChan:
@@ -492,12 +546,19 @@ func main() {
 	// Goroutine: Detectar completación y enviar event=completed
 	go func() {
 		<-completedChan
-		fmt.Println("[INFO] Enviando event=completed al tracker...")
-		_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed", *hostnameFlag)
-		if err != nil {
-			fmt.Println("[ERROR] No se pudo enviar completed:", err)
+
+		//fmt.Println("[INFO] Enviando event=completed.al tracker..")
+		fmt.Println("[INFO] Enviando event=completed...")
+		if ov != nil {
+			ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: 0})
+			fmt.Println("[INFO] Ahora soy un seeder completo (overlay)")
 		} else {
-			fmt.Println("[INFO] Ahora soy un seeder completo")
+			_, err := sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, length, 0, "completed", *hostnameFlag)
+			if err != nil {
+				fmt.Println("[ERROR] No se pudo enviar completed:", err)
+			} else {
+				fmt.Println("[INFO] Ahora soy un seeder completo")
+			}
 		}
 	}()
 
@@ -518,15 +579,23 @@ func main() {
 	// Notificar a todas las goroutines que deben detenerse
 	close(shutdownChan)
 
-	// Enviar stopped al tracker
-	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
+	// Enviar stopped al tracker o overlay
+	fmt.Println("[SHUTDOWN] Enviando event=stopped...")
+	// 	// Enviar stopped al tracker
+	// fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
+
 	left := computeLeft()
 	downloaded := length - left
-	_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped", *hostnameFlag)
-	if err != nil {
-		fmt.Println("[ERROR] No se pudo enviar stopped:", err)
+	if ov != nil {
+		ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: left})
+		fmt.Println("[SHUTDOWN] Anuncio enviado al overlay")
 	} else {
-		fmt.Println("[SHUTDOWN] Event=stopped enviado correctamente")
+		_, err = sendAnnounce(announce, infoHashEncoded, peerId, listenPort, 0, downloaded, left, "stopped", *hostnameFlag)
+		if err != nil {
+			fmt.Println("[ERROR] No se pudo enviar stopped:", err)
+		} else {
+			fmt.Println("[SHUTDOWN] Event=stopped enviado correctamente")
+		}
 	}
 
 	// Cerrar el listener de conexiones
