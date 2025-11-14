@@ -36,7 +36,7 @@ cd src
 docker build -t "$CLIENT_IMAGE" -f client/Dockerfile .
 
 echo "📡 Desplegando tracker..."
-docker service create  --name "$TRACKER_CONTAINER"   --network "$NETWORK_NAME"   --publish "$TRACKER_PORT" "$TRACKER_IMAGE"
+docker run  --name "$TRACKER_CONTAINER"   --network "$NETWORK_NAME"   --publish "$TRACKER_PORT" "$TRACKER_IMAGE"
 
 
 echo "⏳ Esperando que el tracker se inicie..."

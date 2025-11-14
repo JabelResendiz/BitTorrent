@@ -2,11 +2,8 @@
 # BitTorrent
 
 
-
 [link wiki](https://wiki.theory.org/BitTorrentSpecification)
-## Requisitos
 
-## Run
 
 ## Docker Commands
 
