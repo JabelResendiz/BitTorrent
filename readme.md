@@ -2,8 +2,6 @@
 # BitTorrent
 
 
-[link wiki](https://wiki.theory.org/BitTorrentSpecification)
-
 
 ## Docker Commands
 
@@ -575,3 +573,5 @@ Estrategias internas de los clientes BitTorrent para mejorar rendimiento y efici
 
 - Peer Exchange (PEX) : https://www.bittorrent.org/beps/bep_0011.html
 - DHT Protocol : https://www.bittorrent.org/beps/bep_0005.html
+- Wiki de BitTorrent: https://wiki.theory.org/BitTorrentSpecification
+
