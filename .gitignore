@@ -35,5 +35,5 @@ go.work.sum
 tracker_data.json
 archives
 
-SR.torrent
+*.torrent
 #vid.torrent

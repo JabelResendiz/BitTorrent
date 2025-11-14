@@ -568,3 +568,10 @@ Estrategias internas de los clientes BitTorrent para mejorar rendimiento y efici
 - bit reservado primeros dos bytes `ex`
 - usado para intecambir informacion adicional(autenticacipon, estadísticas, mensaje del chat)
 - no está docuemntado oficialmente, se conoce por ingeniería inversa
+
+
+
+# Referencias 
+
+- Peer Exchange (PEX) : https://www.bittorrent.org/beps/bep_0011.html
+- DHT Protocol : https://www.bittorrent.org/beps/bep_0005.html
