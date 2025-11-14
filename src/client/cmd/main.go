@@ -25,6 +25,8 @@ import (
 	"time"
 )
 
+// var httpclient = dns.ResolveCustomHTTPClient("127.0.0.1:8053")
+
 func generatePeerId() string {
 	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
@@ -72,6 +74,9 @@ func sendAnnounce(announceURL, infoHashEncoded, peerId string, port int, uploade
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(fullURL)
+
+	//resp, err := httpclient.Get(fullURL)
+
 	if err != nil {
 		return nil, fmt.Errorf("error en request: %w", err)
 	}
@@ -113,6 +118,7 @@ func sendScrape(announceURL, infoHashEncoded string, infoHash [20]byte) {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(fullURL)
+	//resp, err := httpclient.Get(fullURL)
 	if err != nil {
 		fmt.Println("[SCRAPE] Error:", err)
 		return
