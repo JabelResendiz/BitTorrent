@@ -1,7 +1,74 @@
 
 # BitTorrent
 
-[link wiki](https://wiki.theory.org/BitTorrentSpecification)
+
+
+## Docker Commands
+
+> Constuir las imagenes dentro de src
+
+```bash
+docker build -t client -f client/Dockerfile .
+
+docker build -t tracker -f tracker/Dockerfile .
+
+```
+
+PC 1:
+
+```bash
+
+docker swarm init
+
+docker swarm join-token manager
+
+# obtener un token y pasarlo a la pc2
+
+docker network create --driver overlay <nombre de la red>
+
+```
+
+PC2:
+
+```bash
+
+#comando del manager del token
+
+docker network ls
+
+
+```
+
+### 🛰️ Run Tracker
+Abre una terminal en la raíz del proyecto(src) y ejecuta:
+
+```bash
+go run tracker/cmd/main.go
+```
+
+Esto lanzará e tracker HTTP escuchando en `localhost:8080`
+
+Si todo va bien, se debe ver algo como:
+
+```pgsql
+2025/10/10 23:41:15 tracker listening on :8080 interval=1800s data=tracker_data.json
+```
+### 💻 Run Client
+Abre otra terminal y ejecutar:
+
+```bash
+go run client/cmd/main.go --torrent="./vid.torrent" --archives="¨~/<carpeta home>"
+```
+
+La salida esperada será algo como :
+
+```perl
+Tracker request:  http://localhost:8080/announce?info_hash=%BA%4E...
+Tracker responde:  map[complete:0 incomplete:1 interval:1800 peers:]
+```
+
+En `tracker_data.json` se pueden ver los peers registrados por el tracker.
+
 ## Metainfo File (.torrent)
 Los archivos `.torrent` están bencodeados, que es un formato simple para codificar información (no en texto plano), más fácil que parsear que un XML y un JSON. 
 
@@ -338,3 +405,173 @@ d5:filesd20:....................(info_hash)d8:completei5e10:downloadedi50e10:inc
 GET /scrape?info_hash=%12%34%56%78... HTTP/1.1
 Host: tracker.ejemplo.com:6969
 ```
+
+
+## Peer wire protocol (TCP)
+
+- un cliente debe mantener información de estado para cada conexión que tenga con un peer remoto.
+  - **chocked:** indica si el peer remoto ha "estrangulado" a este cliente. Cuando sucede , le notifica que no responderá a solicitudes hasta que sea desestrangulado. El cliente no debe enviar solicitudes de bloques y debe considerar todas las solicitudes pendientes como descartadas por el peer remoto
+  - **interested:** indica si el peer remoto está interesado en algo que este cliente ofrece. Es una notificación de que el peer remoto empezará a pedir bloques cuando el cliente deje de estrangularlo
+  - ***am_choking:*** este cliente está estrangulando al peer (inicial = 1)
+  - ***am_interested:*** este cliente está interesaod en el peer (inicial = 0)
+  - ***peer_choking:*** peer está estrangulando al cliente (inicial = 1)
+  - ***peer_interested:*** peer está interesado en este cliente (peer_interested = 0)
+  - un bloque se **descarga** cuando el (am_interested = 1) y (peer_choking=0)
+  - un bloque se **sube** cuando el (peer_interested = 1) y (am_choking = 0)
+
+### Handshake 
+> es un mensaje obligatorio y debe ser el primer mensaje transmitido por el cliente. Tiene una longitud de **(49 +  len(pstr)) bytes**.
+
+```php-template
+handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
+```
+- **pstrlen:** longitud de la cadena `pstr` , como un bytes bruto único
+- **pstr:** identificador de cadena del protocolo
+- **reserved:** 8 bytes reservados. Todas las implementaciones actuales usan 0. Cada bit en estos bytes puede usarse para cambiar el comportameinto del protocolo
+- **info_hash:** Es el mismo `info_hash` que se transmite en las solicitudes al tracker (20 bytes)
+- **peer_id:** cadena de 20 bytes usadas como ID único del cliente (el mismo que se transmite en las solicitudes al tracker)
+- en la versión 1.0 del protcolo BitTorrent, `pstrlen=19` y `pstr="BitTorrent protocol"`
+
+
+- el iniciador de la conexión debe transmitir su `handshake` inmediatamente. EL receptor puede esperar el `handshake` del inciador si puede servir múltiples torrent simultaneamente. Sin embargo, el receptor debe responder tan pronto vea la parte `info_hash` del `handshake` (el peer id presumiblemente se enviará después de que el receptro envíe su `handshake`). La función de verificación NAT del tracker no envía el campo `peer_id` del handshake.
+- Si uyn cliente recibe un `handshake` con un `info_hash` que no está sirviendo actualmente , debe cerrar la conexión
+- Si el iniciador de la conexión recibe un `handshake` cuyo `peer_id` no coincide con el peer_id esperado , debe cerrar la conexión. Es decir se espera que el `peer_id` drecibido por el tracker coincida con el del handshake.
+
+### Tipo de datos
+todos los enteros en el protocolo de peer por cable se codifican como valores de cuatro bytes en **big_endian**. Esto incluye el prefijo de longitud en todos los mensajes que vienen después del handshake
+
+### Flujo de Mensajes
+El protocolo consiste en un handshake inicial. Despues , los peers se comunican mediante un intercambio de mensajes prefijados con su longitud. El prefijo de longitud es un entero.
+
+### Mensajes
+> Todos los mensajes restantes en el protocolo toman la forma de `<prefijo de longitud><ID de mensaje><carga útil>`. El prefijo de longitud es un valor de 4 bytes en big-endian. EL ID del mensaje es un solo byte decimal. La carga útil depende del mensaje
+
+- ***keep-alive (len=0000):*** mensaje de 0 bytes, especificado con el prefijo de longitud en 0. No tiene ID de mensaje ni carga útil. Los peers pueden cerrar una conexion si no reciben mensajes (keep-alive o cualquier otro) durante un período de tiempo , por lo que se debe enviar un keep-alive para mantener la conexión viva si no se ha enviado ningún comando durante un tiempo determinado. Suele ser de 2 minutos.
+
+- ***choke (<len=0001><id=0>):*** el mensaje choke tiene longitud fija y no tiene carga útil
+
+- ***unchoke (<len= 0001><id=1>):*** tiene longitud fija y sin carga
+
+- ***interested (<len=0001><id=2>):*** lo mismo que los otros dos
+
+- ***not interested (<len=00001><id=3>):*** lo mismo
+
+- ***have (<len= 00005><id=4><piece index>):*** longitud fija. La carga útil es el índice basado en cero de un piece que acaba de ser descargado y verificado mediante hash
+
+- ***bitfiel (<len=0001+X><id=5><bitfield>):*** mensaje bitfiedl solo puede enviarse inmediatamente después de completar el handshake, antes de enviar cualquier otro mensaje. Es opcional y no es necesario si un cliente no tien piezas.
+
+- ***request(<len=0013><id=6><begin><length>):*** mensaje tiene longitud fija y se usa para solicitar un bloque. La carga útil contiene: index(indece de la pieza), begin(desplazamiento de bytes dentro de la pieza), length(longitud solicitada)
+
+- ***piece(<len=0009+X><id=7><index><begin><block>):*** mensaje de longitud variable, donde X es la longitud del bloque. La carga útil contiene : index (indice de la pieza), begin(desplazamineto dentro de al pieza), block(datos,  subconjunto de al pieza especificada).
+
+- ***cancel(<len=0013><id=8><index><being><length>):*** longitud fija, y se usa para cancelar solicitudes de bloques. La carga útil es identifca a la del mensaje request. Se usa tipicamente durante la fase End Game.
+
+- ***port(<len=0003><id=9><listen-port>):*** mensaje port es envidado por versiones recientes de Mainline que implementar un tracker DHT. listen-port (puerto donde el nodo DHT del peer escucha), este peer debe ser insertado en la tabla de ruteo local si se soporta DHT.
+
+
+## Algoritmos
+
+Estrategias internas de los clientes BitTorrent para mejorar rendimiento y eficiencia. El protocolo base define qué mensajes se pueden enviar(interested, request, piece, ...) pero no cuándo ni cuántos mandar.
+
+### Cola (Queuing)
+
+- ***Problema:*** imaginemos que cada bloque de 16 KB se decarga, y recién cuando termina uno, el cliente pide el siguiente. Eso significa esperar un round trip completo (el tiempo entre enviar solicitud y recibir el bloque). En redes con alta latencia o mucho ando de banda , ese tiempo muerto desperdicia capacidad de descarga.
+
+- ***Solución:*** los clientes mantienen una cola de solicitudes pendientes ("request outstanding"). Así mientras descargan un bloque , ya tienen varios más pedidos. Cuando uno llega, el siguiente ya está en camino. Es mejor hacer 10 request en paralelo que 1 sola request, para mantener el canal lleno y aprovechar el ancho de banda. 
+
+
+### Super Seeding
+
+- Cuando eres el primer seed (el que tiene el archivo completo), la meta es dsitribuir piezas únicas lo más eficientemente posible. 
+- La idea es que el seed finge no tener todas las piezas y solo "anuncia" a los peers una pieza cada vez. Eso así para compartir piezas diferentes con cada peers con el objetivo de que luego entre ellos se lo intercambien. Reduce así la cnatidad total de datos que el seed necesita subir para que se genere otro seed. 
+- Solo se recomineda al sembrar un torrent nuevo (cuando es el primero)
+
+
+### Estrategia de descarga de piezas
+
+- Los clientes pueden elegir descargar piezas en orden aleatorio. Una estrategia mejor es descargar las peizas en orden de rareza creciente (rarest first)
+- El cliente puede determinar esto manteniendo el `bitfield` inicial de cada peer y actualizandolo con cada mensaje `have`.
+- luego puede descargar las piezas que aparezcan con menor frecuencia en esos bitfield.
+- Cualquiera estrategia rarest first debería incluir algo de aleatorización entre las piezas menos comunes, ya que si muchos clientes intentan descargar la misma pieza más rara, se producirá el efecto contrario.
+
+
+### End Game
+- Cuando una descarga está casi completa, hay una tendencia a que los últimos bloques lleguen lentamente
+- Para acelerar esto , el cliente envía solicitudes de todos los bloques faltantes a todos sus peers.
+- Para evitar que esto se vuelva ineficiente , el cliente también envía un mensaje cancel a todos los demás cada vez que llega un bloque.
+
+[overhead del protocolo](http://hal.inria.fr/inria-00000156/en)
+
+### Choking y Optimistic unchoking
+
+- El protocolo usa `choking` para controlar con quién subes datos. No puedes subir a todos a la vez sin romper TCP, así que subes solo a algunos. 
+- La regla básica es : cada 10 seg, eliges 4 peers que te suben más rápido (unchokeas). los demás bloqueas sus solicitudes. Así implementar un tit-for-tat "tu me das velocidad , yo te doy velocidad"
+- la versión optimizada es cada 30seg eliges uno al azar (aunque no te esté dadno nada) para probar si podría ser mejor que tus actaules 4. Si resulta ser rápido, entra en el grupo y otro sale.
+
+
+### Anti-snubbing
+- A veces un peer deja de enviarte piezas (te ignora)
+- Si pasa más de 1 min sin recibir datos, el cliente lo marca como "snubbed" y deja de subirle, salvo en el caso de `optimistic unchoke`
+- EL objetivo es evitar perder tiepo con peers que no colaboran.
+
+
+# Extensiones oficiales del protocolo
+
+## Extensiones Fast Peers
+- bit reservado : el tercer bit menos significativo del 8° byte reservado `reserved[7] |= 0x04`
+- esto permite acelerar el arranque de un peer nuevo en el swarm (la rede de pares compartiendo un torrent).
+- Normalmente , si un peer esta choked, no puede pedir piezas
+- Con esta extensión , ciertos peers pueden descargar piezas específicas aunque estén choked, lo que acelera el sincronización inicial
+
+## DHT
+- bit reserado `reserved[7] |= 0x01` (último bir del octavo byte).
+- permite descubir peers sin necesidad de un tracker centralizado. Cada peer se convierte en un nodo de una red DHT, donde se guarda información sobre qué oeers tiene qué torrents.
+- el sistema sigue funcionando si el tracker cae
+- los peers se buscan entre sí usanod una table hash distribuida (basada en kademlia)
+- BEP-32 agrega soporte para IPV6
+
+## Connection Obfuscation( Message Stream Encryption- MSE)
+
+- no tiene bit reservado específico
+- permite cifrar o camuflar las conexiones BitTorrent para evitar que los proveedores de internet, detecten o limiten el trafico torrent. 
+- ofusca el handsahke y los mensajes del protocolo
+- ayuda a evadir el trafic shapping o throttling
+- mejora la privacidad
+
+## WebSeeding
+- no usa bit reservado
+- permite que un servidor HTTP actúe como seed(fuente de datos), además de los peers normales
+- en resumen, pueeds descargar partes del torrent desde un servidor web, no solo de otros usuarios
+
+## Extension Protocol 
+- bit reservado `reserved[5] = 0x10` 8caurto bit mas signficativo del sexto byte
+- define una forma genérica para anuciar y negociar extensiones entre cliente
+- cada extensión adicional (por ejemplo DHT, metadata exchange, peer exchange) se anuncia y negocia mediante este protocolo
+
+## extensión negotiation protocol
+- bite servado el 47 y 48
+- permite decidir que extensio usar si ambos peers soportan varias.
+- evita conflictos cuando dos cliete implementan diferentes sistema de extensión.
+
+## bittorrent location aware-protocol
+- bit reservado: 21
+- permite que los peers tomen en cuanta la ubicación geográfica de otros peers. De esa forma pueden prefierir descargar de peers más cercanos, reduciendo latencia y carga de red
+
+## SimpleBT extension protoc0l
+- bit reservado primer byte `0x01`
+- agrega intercambio de informacion de peers y estadísticas de conexión.
+- fue usado en versiones antiguas de SImpleBot
+
+## BitComet Extension Protocol
+- bit reservado primeros dos bytes `ex`
+- usado para intecambir informacion adicional(autenticacipon, estadísticas, mensaje del chat)
+- no está docuemntado oficialmente, se conoce por ingeniería inversa
+
+
+
+# Referencias 
+
+- Peer Exchange (PEX) : https://www.bittorrent.org/beps/bep_0011.html
+- DHT Protocol : https://www.bittorrent.org/beps/bep_0005.html
+- Wiki de BitTorrent: https://wiki.theory.org/BitTorrentSpecification
+

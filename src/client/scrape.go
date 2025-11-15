@@ -1,4 +1,5 @@
 package client
+//client/scraper.go
 
 import (
 	"fmt"
