@@ -29,4 +29,11 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
+
+# DB files
+tracker_data.json
+archives
+
+*.torrent
+#vid.torrent
