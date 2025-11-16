@@ -8,9 +8,9 @@ TRACKER_CONTAINER="tracker"
 CLIENT_IMAGE="client_img:latest"
 TRACKER_PORT="8081:8080"
 NETWORK_NAME="net"
-BASE_VOLUME_PATH="/home/jabel/Escritorio/volumen"
-SEED_TORRENT="/home/jabel/Escritorio/volumen/video2.torrent"
-SEED_MOVIE="/home/jabel/Escritorio/volumen/Lecture 2 - Divide and Conquer.mp4"
+BASE_VOLUME_PATH="${BT_VOLUME_PATH:?Debe definir BT_VOLUME_PATH}"
+SEED_TORRENT="${BT_SEED_TORRENT:?Debe definir BT_SEED_TORRENT}"
+SEED_MOVIE="${BT_SEED_MOVIE:?Debe definir BT_SEED_MOVIE}"
 CLIENT_COUNT=${1:-3}
 
 #####
