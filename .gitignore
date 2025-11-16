@@ -35,5 +35,9 @@ go.work.sum
 tracker_data.json
 archives
 
+# BitTorrent artifacts
 *.torrent
-#vid.torrent
+
+# env specific configuration
+.env.local
+
