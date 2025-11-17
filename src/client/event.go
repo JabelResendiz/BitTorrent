@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"src/overlay"
 	"time"
 )
 
@@ -32,6 +33,44 @@ func StartCompletionAnnounceRoutine(
 			fmt.Println("[ERROR] No se pudo enviar completed:", err)
 		} else {
 			fmt.Println("[INFO] Ahora soy un seeder completo")
+		}
+	}()
+}
+
+func StartCompletionAnnounceRoutineOverlay(
+	completedChan <-chan struct{},
+	cfg *ClientConfig,
+	listenPort int,
+	hostnameFlag string,
+	ov *overlay.Overlay,
+	providerAddr string,
+) {
+
+	go func() {
+		<-completedChan
+		fmt.Println("[INFO] Enviando event=completed al tracker...")
+
+		if ov != nil {
+			ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: 0})
+			fmt.Println("[INFO] Ahora soy un seeder completo (overlay)")
+		} else {
+			_, err := SendAnnounce(
+				cfg.AnnounceURL,
+				cfg.InfoHashEncoded,
+				cfg.PeerId,
+				listenPort,
+				0,
+				cfg.FileLength,
+				0,
+				"completed",
+				hostnameFlag,
+			)
+
+			if err != nil {
+				fmt.Println("[ERROR] No se pudo enviar completed:", err)
+			} else {
+				fmt.Println("[INFO] Ahora soy un seeder completo")
+			}
 		}
 	}()
 }
@@ -70,6 +109,53 @@ func StartPeriodicAnnounceRoutine(
 					fmt.Println("[ERROR] Announce periódico fallido:", err)
 				} else {
 					fmt.Println("[INFO] Announce periódico enviado")
+				}
+
+			case <-shutdownChan:
+				fmt.Println("[INFO] Periodic announce detenido")
+				return
+			}
+		}
+	}()
+}
+
+func StartPeriodicAnnounceRoutineOverlay(
+	cfg *ClientConfig,
+	listenPort int,
+	hostname string,
+	computeLeft func() int64,
+	shutdownChan <-chan struct{},
+	trackerInterval time.Duration,
+	ov *overlay.Overlay,
+	providerAddr string,
+) {
+	go func() {
+		ticker := time.NewTicker(trackerInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				left := computeLeft()
+
+				if ov != nil {
+					ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: left})
+				} else {
+					_, err := SendAnnounce(
+						cfg.AnnounceURL,
+						cfg.InfoHashEncoded,
+						cfg.PeerId,
+						listenPort,
+						0,
+						0,
+						left,
+						"",
+						hostname,
+					)
+
+					if err != nil {
+						fmt.Println("[ERROR] Announce periodico fallido:", err)
+					}
 				}
 
 			case <-shutdownChan:
