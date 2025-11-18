@@ -51,6 +51,7 @@ func (o *Overlay) Stop() {
 	}
 }
 
+// acepta conexiones entrantes mientras no se cierre el overlay
 func (o *Overlay) serveListener(ln net.Listener) {
 	defer ln.Close()
 	for {
