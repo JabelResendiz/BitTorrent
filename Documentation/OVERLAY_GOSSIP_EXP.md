@@ -321,12 +321,3 @@ Es un **overlay P2P simple** que:
 Un mini-tracker descentralizado sin DHT completa.
 
 ---
-
-Si quieres, te puedo hacer:
-
-✔ un diagrama de flujo del overlay
-✔ una versión con UDP
-✔ una versión con vector clocks
-✔ una versión optimizada estilo Kademlia
-
-Solo dime.
