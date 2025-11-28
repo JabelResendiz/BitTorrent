@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"src/client"
 	"src/overlay"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -39,8 +40,7 @@ func main() {
 	listenPort := ln.Addr().(*net.TCPAddr).Port
 	fmt.Println("Cliente escuchando en puerto:", listenPort)
 
-	var ov *overlay.Overlay
-	ov = client.SetupOverlay(discoveryFlag, bootstrapFlag, overlayPortFlag)
+	ov := client.SetupOverlay(discoveryFlag, bootstrapFlag, overlayPortFlag)
 
 	store, mgr, useFinal := client.SetupStorage(cfg)
 
@@ -59,9 +59,36 @@ func main() {
 
 	providerAddr := fmt.Sprintf("%s:%d", hostnameFlag, listenPort)
 	if ov != nil {
-		ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: initialLeft})
+		// ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: initialLeft})
+		// fmt.Println("Announced to overlay, left=", initialLeft)
+
+		// construir lista initialPeers: SOLO nodos remotos
+		initialPeers := []string{}
+		if bootstrapFlag != "" {
+			for _, p := range strings.Split(bootstrapFlag, ",") {
+				p = strings.TrimSpace(p)
+				if p != "" && p != providerAddr {
+					initialPeers = append(initialPeers, p)
+				}
+			}
+		}
+
+		// Hacer discovery síncrono antes de anunciar
+		ttlDepth := 3
+		if err := ov.Discover(cfg.InfoHashEncoded, initialPeers, ttlDepth); err != nil {
+			fmt.Println("Overlay discovery returned error:", err)
+		} else {
+			fmt.Println("Overlay discovery completed; store has providers for infohash")
+		}
+
+		// Ahora sí nos anunciamos al overlay
+		ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{
+			Addr:   providerAddr,
+			PeerId: cfg.PeerId,
+			Left:   initialLeft,
+		})
 		fmt.Println("Announced to overlay, left=", initialLeft)
-		// keep default trackerInterval
+
 	} else {
 		initialLeft := computeLeft()
 		trackerResponse, err = client.SendAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
