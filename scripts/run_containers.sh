@@ -45,7 +45,7 @@ docker run -d --name seeder --network "$NETWORK_NAME" \
   -v "$ROOT/archives/torrents":/torrents:ro \
   -p 6000:6000 \
   "$IMAGE_NAME" \
-  --torrent=/torrents/video.torrent \
+  --torrent=/torrents/pelicula.torrent \
   --archives=/data \
   --hostname=seeder \
   --discovery-mode=overlay \
@@ -59,7 +59,7 @@ docker run -d --name leecher1 --network "$NETWORK_NAME" \
   -v "$ROOT/archives/torrents":/torrents:ro \
   -p 6001:6001 \
   "$IMAGE_NAME" \
-  --torrent=/torrents/video.torrent \
+  --torrent=/torrents/pelicula.torrent \
   --archives=/data \
   --hostname=leecher1 \
   --discovery-mode=overlay \
@@ -74,7 +74,7 @@ docker run -d --name leecher2 --network "$NETWORK_NAME" \
   -v "$ROOT/archives/torrents":/torrents:ro \
   -p 6002:6002 \
   "$IMAGE_NAME" \
-  --torrent=/torrents/video.torrent \
+  --torrent=/torrents/pelicula.torrent \
   --archives=/data \
   --hostname=leecher2 \
   --discovery-mode=overlay \
@@ -89,7 +89,7 @@ docker run -d --name leecher3 --network "$NETWORK_NAME" \
   -v "$ROOT/archives/torrents":/torrents:ro \
   -p 6003:6003 \
   "$IMAGE_NAME" \
-  --torrent=/torrents/video.torrent \
+  --torrent=/torrents/pelicula.torrent \
   --archives=/data \
   --hostname=leecher3 \
   --discovery-mode=overlay \
@@ -104,7 +104,7 @@ docker run -d --name leecher4 --network "$NETWORK_NAME" \
   -v "$ROOT/archives/torrents":/torrents:ro \
   -p 6004:6004 \
   "$IMAGE_NAME" \
-  --torrent=/torrents/video.torrent \
+  --torrent=/torrents/pelicula.torrent \
   --archives=/data \
   --hostname=leecher4 \
   --discovery-mode=overlay \

@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"sort"
 	"strings"
@@ -38,6 +39,8 @@ func (o *Overlay) Start() error {
 	}
 	go o.serveListener(ln)
 	go o.periodicGossip()
+	go o.periodicHealthCheck()
+
 	return nil
 }
 
@@ -142,6 +145,40 @@ func sendWireMsg(addr string, msg wireMsg) {
 	enc := json.NewEncoder(conn)
 	_ = enc.Encode(msg)
 	// don't wait for reply
+}
+
+func (o *Overlay) periodicHealthCheck() {
+	ticker := time.NewTicker(10 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			o.checkDeadPeers()
+		case <-o.stopCh:
+			ticker.Stop()
+			return
+		}
+	}
+}
+
+func (o *Overlay) checkDeadPeers() {
+	now := time.Now().Unix()
+	timeout := int64(20) // peer muerto si no responde por 20s
+
+	all := o.Store.AllProviders() // tú defines este helper
+
+	for infoHash, providers := range all {
+		alive := []ProviderMeta{}
+
+		for _, pm := range providers {
+			if now-pm.LastSeen < timeout {
+				alive = append(alive, pm)
+			} else {
+				fmt.Println("[OVERLAY] Peer muerto:", pm.Addr)
+			}
+		}
+
+		o.Store.Replace(infoHash, alive)
+	}
 }
 
 // Announce locally registers the provider and also tries to push to peers
