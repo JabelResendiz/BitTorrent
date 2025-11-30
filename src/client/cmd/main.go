@@ -9,11 +9,14 @@ import (
 	"os/signal"
 	"src/client"
 	"src/overlay"
+	"src/utils"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
+
+var log = utils.NewLogger("CLIENT")
 
 func main() {
 	// Variables de control para manejo de eventos
@@ -34,13 +37,15 @@ func main() {
 
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
+		log.Error("No se pudo abrir el listener: %v", err)
 		panic(err)
 	}
 
 	listenPort := ln.Addr().(*net.TCPAddr).Port
-	fmt.Println("Cliente escuchando en puerto:", listenPort)
+	log.Info("Cliente escuchando en puerto: %d", listenPort)
 
 	ov := client.SetupOverlay(discoveryFlag, bootstrapFlag, overlayPortFlag)
+	log.Debug("Overlay inicializado: %+v", ov)
 
 	store, mgr, useFinal := client.SetupStorage(cfg)
 
@@ -76,9 +81,9 @@ func main() {
 		// Hacer discovery síncrono antes de anunciar
 		ttlDepth := 3
 		if err := ov.Discover(cfg.InfoHashEncoded, initialPeers, ttlDepth); err != nil {
-			fmt.Println("Overlay discovery returned error:", err)
+			log.Warn("Overlay discovery returned error: %v", err)
 		} else {
-			fmt.Println("Overlay discovery completed; store has providers for infohash")
+			log.Info("Overlay discovery completed; store has providers for infohash")
 		}
 
 		// Ahora sí nos anunciamos al overlay
@@ -87,15 +92,16 @@ func main() {
 			PeerId: cfg.PeerId,
 			Left:   initialLeft,
 		})
-		fmt.Println("Announced to overlay, left=", initialLeft)
+		log.Info("Announced to overlay, left=%d", initialLeft)
 
 	} else {
 		initialLeft := computeLeft()
 		trackerResponse, err = client.SendAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
 		if err != nil {
-			panic(fmt.Errorf("error en announce inicial: %w", err))
+			log.Error("Error en announce inicial: %w", err)
+			panic(err)
 		}
-		fmt.Println("Tracker responde:", trackerResponse)
+		log.Info("Tracker responde: %+v", trackerResponse)
 
 		// Hacer scrape para obtener estadísticas del torrent
 		client.SendScrape(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.InfoHash)
@@ -103,7 +109,7 @@ func main() {
 		// Extraer intervalo del tracker (por defecto 30 minutos)
 		if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
 			trackerInterval = time.Duration(intervalRaw) * time.Second
-			fmt.Printf("Intervalo de announces: %v\n", trackerInterval)
+			log.Info("Intervalo de announces: %v", trackerInterval)
 		}
 	}
 
@@ -143,29 +149,39 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
 	// Loop principal: esperar señal de terminación
-	fmt.Println("\n=== Cliente BitTorrent ejecutándose ===")
-	fmt.Println("Presiona Ctrl+C para detener el cliente")
-	fmt.Printf("Escuchando en puerto: %d\n", listenPort)
-	fmt.Printf("Announces cada: %v\n\n", trackerInterval)
+	log.Info("=== Cliente BitTorrent ejecutándose ===")
+	log.Info("Presiona Ctrl+C para detener el cliente")
+	log.Info("Escuchando en puerto: %d", listenPort)
+	log.Info("Announces cada: %v", trackerInterval)
 
 	sig := <-sigChan
 
 	// Shutdown limpio
-	fmt.Printf("\n\n=== Señal %v recibida, iniciando shutdown limpio ===\n", sig)
+	log.Warn("=== Señal %v recibida, iniciando shutdown limpio ===", sig)
 
 	// Notificar a todas las goroutines que deben detenerse
 	close(shutdownChan)
 
 	// Enviar stopped al tracker
 	//client.SendStoppedAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, cfg.FileLength, computeLeft, hostnameFlag)
-	client.SendStoppedAnnounceOverlay(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, cfg.FileLength, computeLeft, hostnameFlag, ov, providerAddr)
+	client.SendStoppedAnnounceOverlay(
+		cfg.AnnounceURL,
+		cfg.InfoHashEncoded,
+		cfg.PeerId, 
+		listenPort, 
+		cfg.FileLength, 
+		computeLeft, 
+		hostnameFlag, 
+		ov, 
+		providerAddr ,
+	)
 
 	// Cerrar el listener de conexiones
-	fmt.Println("[SHUTDOWN] Cerrando listener...")
+	log.Warn("Cerrando listener...")
 	ln.Close()
 
 	// Dar tiempo a las goroutines para terminar
 	time.Sleep(500 * time.Millisecond)
 
-	fmt.Println("[SHUTDOWN] Cliente cerrado correctamente. Adiós!")
+	log.Info("Cliente cerrado correctamente. Adiós!")
 }

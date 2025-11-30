@@ -2,11 +2,10 @@ package overlay
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 	"sort"
-	"strings"
 	"time"
+	"src/utils"
 )
 
 // message types used on the wire
@@ -23,24 +22,34 @@ type Overlay struct {
 	peers      []string
 	listenAddr string
 	stopCh     chan struct{}
+	Logger     *utils.Logger
 }
 
 // NewOverlay crea un overlay con TTL por defecto de 90s
 func NewOverlay(listenAddr string, peers []string) *Overlay {
 	s := NewStore(90 * time.Second)
-	return &Overlay{Store: s, peers: peers, listenAddr: listenAddr, stopCh: make(chan struct{})}
+	return &Overlay{
+		Store: s, 
+		peers: peers, 
+		listenAddr: listenAddr, 
+		stopCh: make(chan struct{}),
+		Logger: utils.NewLogger("Overlay")}
 }
 
 // Start inicia el listener TCP y el loop de gossip periódico
 func (o *Overlay) Start() error {
+	o.Logger.Info("Iniciando Overlay en %s con peers %v", o.listenAddr, o.peers)
+	
 	ln, err := net.Listen("tcp", o.listenAddr)
 	if err != nil {
-		return err
+		o.Logger.Error("Fallo escuchando en %s: %v", o.listenAddr, err)
+        return err
 	}
-	go o.serveListener(ln)
-	go o.periodicGossip()
-	go o.periodicHealthCheck()
+	go o.ServeListener(ln)
+	go o.PeriodicGossip() // cada 8 seg
+	go o.PeriodicHealthCheck() // cada 10 seg
 
+	o.Logger.Info("Overlay iniciado correctamente")
 	return nil
 }
 
@@ -54,87 +63,87 @@ func (o *Overlay) Stop() {
 	}
 }
 
-// acepta conexiones entrantes mientras no se cierre el overlay
-func (o *Overlay) serveListener(ln net.Listener) {
-	defer ln.Close()
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			select {
-			case <-o.stopCh:
-				return
-			default:
-			}
-			continue
-		}
-		go o.handleConn(conn)
-	}
-}
+// // acepta conexiones entrantes mientras no se cierre el overlay
+// func (o *Overlay) serveListener(ln net.Listener) {
+// 	defer ln.Close()
+// 	for {
+// 		conn, err := ln.Accept()
+// 		if err != nil {
+// 			select {
+// 			case <-o.stopCh:
+// 				return
+// 			default:
+// 			}
+// 			continue
+// 		}
+// 		go o.handleConn(conn)
+// 	}
+// }
 
-func (o *Overlay) handleConn(conn net.Conn) {
-	defer conn.Close()
-	dec := json.NewDecoder(conn)
-	var m wireMsg
-	if err := dec.Decode(&m); err != nil {
-		// ignore decode errors
-		return
-	}
-	switch strings.ToLower(m.Type) {
-	case "gossip", "announce":
-		if m.InfoHash != "" && len(m.Providers) > 0 {
-			o.Store.Merge(m.InfoHash, m.Providers)
-		}
-		// no reply required
-	case "lookup":
-		// respond with local providers for requested infoHash
-		if m.InfoHash == "" {
-			return
-		}
-		provs := o.Store.Lookup(m.InfoHash, m.Limit)
-		enc := json.NewEncoder(conn)
-		// reply with providers array
-		_ = enc.Encode(provs)
-	default:
-		return
-	}
-}
+// func (o *Overlay) handleConn(conn net.Conn) {
+// 	defer conn.Close()
+// 	dec := json.NewDecoder(conn)
+// 	var m wireMsg
+// 	if err := dec.Decode(&m); err != nil {
+// 		// ignore decode errors
+// 		return
+// 	}
+// 	switch strings.ToLower(m.Type) {
+// 	case "gossip", "announce":
+// 		if m.InfoHash != "" && len(m.Providers) > 0 {
+// 			o.Store.Merge(m.InfoHash, m.Providers)
+// 		}
+// 		// no reply required
+// 	case "lookup":
+// 		// respond with local providers for requested infoHash
+// 		if m.InfoHash == "" {
+// 			return
+// 		}
+// 		provs := o.Store.Lookup(m.InfoHash, m.Limit)
+// 		enc := json.NewEncoder(conn)
+// 		// reply with providers array
+// 		_ = enc.Encode(provs)
+// 	default:
+// 		return
+// 	}
+// }
 
-// periodicGossip envia nuestro estado a peers conocidos periódicamente
-func (o *Overlay) periodicGossip() {
-	ticker := time.NewTicker(8 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			o.gossipOnce()
-		case <-o.stopCh:
-			return
-		}
-	}
-}
+// // periodicGossip envia nuestro estado a peers conocidos periódicamente
+// func (o *Overlay) periodicGossip() {
+// 	ticker := time.NewTicker(8 * time.Second)
+// 	defer ticker.Stop()
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			o.gossipOnce()
+// 		case <-o.stopCh:
+// 			return
+// 		}
+// 	}
+// }
 
-// gossipOnce: por simplicidad envia por cada infoHash full provider list a los peers
-func (o *Overlay) gossipOnce() {
-	o.Store.mu.RLock()
-	infohashes := make([]string, 0, len(o.Store.records))
-	for ih := range o.Store.records {
-		infohashes = append(infohashes, ih)
-	}
-	o.Store.mu.RUnlock()
+// // gossipOnce: por simplicidad envia por cada infoHash full provider list a los peers
+// func (o *Overlay) gossipOnce() {
+// 	o.Store.mu.RLock()
+// 	infohashes := make([]string, 0, len(o.Store.records))
+// 	for ih := range o.Store.records {
+// 		infohashes = append(infohashes, ih)
+// 	}
+// 	o.Store.mu.RUnlock()
 
-	for _, peer := range o.peers {
-		for _, ih := range infohashes {
-			b, err := o.Store.ToJSON(ih)
-			if err != nil {
-				continue
-			}
-			msg := wireMsg{Type: "gossip", InfoHash: ih}
-			// attach providers
-			_ = json.Unmarshal(b, &msg.Providers)
-			go sendWireMsg(peer, msg)
-		}
-	}
-}
+// 	for _, peer := range o.peers {
+// 		for _, ih := range infohashes {
+// 			b, err := o.Store.ToJSON(ih)
+// 			if err != nil {
+// 				continue
+// 			}
+// 			msg := wireMsg{Type: "gossip", InfoHash: ih}
+// 			// attach providers
+// 			_ = json.Unmarshal(b, &msg.Providers)
+// 			go sendWireMsg(peer, msg)
+// 		}
+// 	}
+// }
 
 func sendWireMsg(addr string, msg wireMsg) {
 	conn, err := net.DialTimeout("tcp", addr, 1200*time.Millisecond)
@@ -147,39 +156,39 @@ func sendWireMsg(addr string, msg wireMsg) {
 	// don't wait for reply
 }
 
-func (o *Overlay) periodicHealthCheck() {
-	ticker := time.NewTicker(10 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			o.checkDeadPeers()
-		case <-o.stopCh:
-			ticker.Stop()
-			return
-		}
-	}
-}
+// func (o *Overlay) periodicHealthCheck() {
+// 	ticker := time.NewTicker(10 * time.Second)
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			o.checkDeadPeers()
+// 		case <-o.stopCh:
+// 			ticker.Stop()
+// 			return
+// 		}
+// 	}
+// }
 
-func (o *Overlay) checkDeadPeers() {
-	now := time.Now().Unix()
-	timeout := int64(20) // peer muerto si no responde por 20s
+// func (o *Overlay) checkDeadPeers() {
+// 	now := time.Now().Unix()
+// 	timeout := int64(20) // peer muerto si no responde por 20s
 
-	all := o.Store.AllProviders() // tú defines este helper
+// 	all := o.Store.AllProviders() // tú defines este helper
 
-	for infoHash, providers := range all {
-		alive := []ProviderMeta{}
+// 	for infoHash, providers := range all {
+// 		alive := []ProviderMeta{}
 
-		for _, pm := range providers {
-			if now-pm.LastSeen < timeout {
-				alive = append(alive, pm)
-			} else {
-				fmt.Println("[OVERLAY] Peer muerto:", pm.Addr)
-			}
-		}
+// 		for _, pm := range providers {
+// 			if now-pm.LastSeen < timeout {
+// 				alive = append(alive, pm)
+// 			} else {
+// 				fmt.Println("[OVERLAY] Peer muerto:", pm.Addr)
+// 			}
+// 		}
 
-		o.Store.Replace(infoHash, alive)
-	}
-}
+// 		o.Store.Replace(infoHash, alive)
+// 	}
+// }
 
 // Announce locally registers the provider and also tries to push to peers
 func (o *Overlay) Announce(infoHash string, p ProviderMeta) {
