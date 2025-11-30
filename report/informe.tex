@@ -177,6 +177,57 @@ Para mantener compatibilidad con trackers BitTorrent estándar, el sistema incor
 
 Como servicio auxiliar, el sistema incluye un \textbf{protocolo DNS personalizado} que implementa un sistema DNS distribuido para resolución de nombres en el overlay. Este servicio utiliza UDP DNS resolver en puerto 8053 para consultas de resolución, API REST para registro de registros DNS mediante POST HTTP con JSON, y gossip DNS para sincronización de registros entre servidores DNS distribuidos.
 
+Desde el punto de vista de los modelos de comunicación en sistemas distribuidos, la arquitectura empleada combina comunicación \textbf{transitoria} y \textbf{persistente}, así como operaciones \textbf{sincrónicas} y \textbf{asíncronas} según el protocolo utilizado:
+
+\begin{enumerate}
+    \item \textbf{Overlay Gossip (lookup, gossip, announce)}
+    \begin{enumerate}
+        \item \textbf{Persistencia:} Transitoria. Si un nodo no está disponible, el mensaje se pierde y se propaga a través de otros peers en el siguiente ciclo de gossip.
+        \item \textbf{Sincronización:} Gossip y announce son asíncronos (fire-and-forget), mientras que lookup es sincrónico porque el emisor espera la respuesta o timeout.
+    \end{enumerate}
+    \item \textbf{BitTorrent Peerwire (transferencia P2P)}
+    \begin{enumerate}
+        \item \textbf{Persistencia:} Transitoria; si un peer cae, el mensaje se descarta y se reintenta con otros peers.
+        \item \textbf{Sincronización:} Parcialmente sincrónico (handshake y mensajes request/response bloquean hasta obtener la pieza).
+    \end{enumerate}
+    \item \textbf{Tracker HTTP/Bencode (modo fallback)}
+    \begin{enumerate}
+        \item \textbf{Persistencia:} Persistente del lado del tracker, ya que este mantiene estado de peers.
+        \item \textbf{Sincronización:} Sincrónica: el cliente espera la respuesta del tracker.
+    \end{enumerate}
+    \item \textbf{DNS distribuido interno}
+    \begin{enumerate}
+        \item \textbf{Persistencia:} Persistencia débil mediante cachés y anti-entropía.
+        \item \textbf{Sincronización:} Asíncrona (UDP), con sincronización eventual vía gossip DNS.
+    \end{enumerate}
+\end{enumerate}
+
+Esta clasificación permite ubicar el sistema dentro del marco teórico de middleware distribuido, mostrando cómo cada protocolo combina distintos niveles de persistencia y sincronización para equilibrar rendimiento, tolerancia a fallos y consistencia eventual.
+
+\subsection{Formas de comunicación}
+
+Desde el punto de vista de los modelos clásicos de comunicación en sistemas distribuidos, el sistema se clasifica fundamentalmente dentro del paradigma de \textbf{comunicación basada en mensajes}. Aunque algunos protocolos presentan interacciones sincrónicas similares a RPC, la arquitectura en su conjunto no utiliza invocaciones remotas ni objetos distribuidos, sino intercambio explícito de mensajes entre procesos autónomos.
+
+En particular, el sistema se relaciona con las formas de comunicación de la siguiente manera:
+
+\begin{itemize}
+    \item \textbf{Comunicación basada en mensajes (Message-Passing):}  
+    Este es el modelo que mejor describe el sistema. La interacción entre procesos ocurre mediante el intercambio de mensajes explícitos:
+    \begin{itemize}
+        \item mensajes binarios estructurados del protocolo \textbf{BitTorrent/Peerwire},
+        \item mensajes JSON del \textbf{Overlay Gossip},
+        \item mensajes UDP breves del \textbf{DNS distribuido},
+        \item mensajes HTTP request-response del \textbf{tracker estándar}.
+    \end{itemize}
+
+    Este enfoque coincide conceptualmente con sistemas como \textbf{ZMQ} o \textbf{AMQP}, donde los procesos se comunican mediante mensajes sin compartir memoria ni invocar funciones remotas. Cada componente del sistema actúa como un nodo independiente que envía, recibe y enruta información en función de su responsabilidad.
+
+    \item \textbf{Multicast / Difusión}:  
+    Aunque no se utiliza multicast IP de nivel de red, el protocolo de gossip implementa un mecanismo de \textbf{difusión parcial estilo multicast} a nivel de aplicación. Cada ciclo de gossip transmite información a un subconjunto aleatorio de vecinos, propagándola de manera epidémica por toda la red. Este patrón es equivalente a un \emph{epidemic multicast}, proporcionando consistencia eventual y alta tolerancia a fallos.
+\end{itemize}
+
+En conjunto, estas formas de comunicación muestran que el sistema emplea una arquitectura distribuida orientada a mensajes, donde cada protocolo contribuye a diferentes aspectos del comportamiento global: transferencia de datos, descubrimiento de peers, sincronización ligera y compatibilidad con estándares externos.
+
 \subsection{Comunicación cliente-servidor y servidor-servidor}
 El sistema arquitectural se fundamenta en un modelo híbrido que combina patrones cliente-servidor con peer-to-peer, maximizando las ventajas de ambos paradigmas según el contexto operacional.
 
