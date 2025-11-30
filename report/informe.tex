@@ -88,7 +88,7 @@ La arquitectura aprovecha las capacidades nativas de Docker Swarm para crear una
 
 La red overlay de Docker proporciona comunicación transparente entre contenedores ubicados en diferentes máquinas físicas, implementando encriptación IPSEC automática para tráfico inter-nodo, DNS interno para resolución de nombres de servicios, y enrutamiento inteligente con load balancing incorporado. Cada servicio expone dos puertos principales con propósitos diferenciados: el puerto peerwire para conexiones entrantes del protocolo BitTorrent enfocadas en transferencia de piezas de archivos, y el puerto overlay para el listener del gossip protocol dedicado al descubrimiento distribuido y manejo de metadatos.
 
-El sistema utiliza un mecanismo de bootstrap híbrido que combina el flag \texttt{--bootstrap} con lista de peers conocidos para arranque inicial, integración con DNS interno de Swarm para descobrir otros servicios, expansion dinámica donde una vez conectado el overlay gossip permite descubrir peers adicionales transitivamente, y resilience mediante tolerancia a fallos de nodos bootstrap a través de múltiples puntos de entrada.
+El sistema utiliza un mecanismo de bootstrap híbrido que combina el flag \texttt{--bootstrap} con lista de peers conocidos para arranque inicial, integración con DNS interno de Swarm para descubrir otros servicios, expansión dinámica donde una vez conectado el overlay gossip permite descubrir peers adicionales transitivamente, y resilience mediante tolerancia a fallos de nodos bootstrap a través de múltiples puntos de entrada.
 
 \subsection{Patrones Arquitecturales y Principios de Diseño}
 El sistema implementa el patrón de red superpuesta (overlay network) que proporciona abstracción de la red física, permitiendo que los nodos se comuniquen a través de una topología lógica completamente independiente de la infraestructura subyacente. Esta abstracción habilita enrutamiento especializado mediante algoritmos de descubrimiento optimizados para contenido específico identificado por infoHash, mientras mantiene adaptabilidad topológica donde la red se reconfigura dinámicamente ante fallos o cambios de membresía sin intervención manual.
@@ -106,6 +106,14 @@ Para manejar el crecimiento del sistema, la arquitectura incorpora múltiples me
 El sistema implementa una arquitectura híbrida de dos redes superpuestas que operan simultáneamente con propósitos complementarios. La red de descubrimiento (Overlay Gossip) constituye una red no estructurada donde cada nodo mantiene conexiones con un subconjunto de peers bootstrap, estableciendo conectividad inicial a través de 2-5 peers especificados via \texttt{--bootstrap}. Esta red utiliza protocolo TCP con mensajes JSON estructurados para operaciones de gossip, announce y lookup, implementando un patrón de propagación epidemic gossip con intervalos de 8 segundos y detección de fallos mediante health checks periódicos cada 10 segundos con timeout de 800ms.
 
 Paralelamente, la red de transferencia (BitTorrent Swarm) opera como una red dinámica peer-to-peer dedicada exclusivamente a transferencia real de datos. Los peers se descubren mediante lookup en el overlay gossip en lugar del tradicional tracker HTTP, estableciendo conexiones directas utilizando el protocolo BitTorrent peerwire estándar sobre TCP. El sistema mantiene un pool dinámico de conexiones peer con validación de handshake rigurosa, implementando estados de control de flujo choke/unchoke e interested/not-interested para optimizar la utilización del ancho de banda disponible.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.9\textwidth]{redes-bittorrent.png}
+    \caption{Ejemplo de nodos en la red P2P. Cada peer expone un puerto de overlay para el servicio distribuido de descubrimiento y un puerto BitTorrent para conexiones peerwire.}
+    \label{fig:arquitectura}
+\end{figure}
+
 
 \section{Procesos}
 La implementación del sistema distribuido se fundamenta en un modelo de procesos concurrentes que maximiza la eficiencia y escalabilidad mediante el uso intensivo de goroutines de Go. Esta arquitectura permite manejar simultáneamente miles de conexiones y operaciones de red mientras mantiene un consumo de recursos optimizado.
