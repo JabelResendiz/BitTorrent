@@ -21,9 +21,11 @@ func checkNodeAlive(addr string, timeout time.Duration) bool {
 
 func (o *Overlay) Discover(infoHash string, initialPeers []string, ttl int) error {
 
-	fmt.Printf("[DISCOVER] Iniciando discovery para infohash %s con TTL %d y bootstraps: %v\n", infoHash, ttl, initialPeers)
+	//fmt.Printf("[DISCOVER] Iniciando discovery para infohash %s con TTL %d y bootstraps: %v\n", infoHash, ttl, initialPeers)
+	o.Logger.Info("Iniciando discovery para infohash %s con TTL %d y bootstrap: %v\n",infoHash,ttl,initialPeers)
 
 	if len(initialPeers) == 0 {
+		o.Logger.Warn("Discover: initialPeers vacío")
 		return fmt.Errorf("Discover: initialPeers vacío")
 	}
 	seen := make(map[string]struct{})
@@ -49,7 +51,8 @@ func (o *Overlay) Discover(infoHash string, initialPeers []string, ttl int) erro
 		}
 		// agrega con PeerId vacío si no tenemos peerId; LastSeen se ajusta en Announce si fuera necesario
 		pm := ProviderMeta{Addr: p, PeerId: "", Left: 0, LastSeen: now}
-		fmt.Printf("%v", pm)
+		// fmt.Printf("%v", pm)
+		o.Logger.Debug("%v",pm)
 		o.Store.Merge(infoHash, []ProviderMeta{pm})
 	}
 
@@ -107,6 +110,7 @@ func (o *Overlay) Discover(infoHash string, initialPeers []string, ttl int) erro
 	// último chequeo: si no hay providers en store para el infohash devolvemos error
 	finalList := o.Store.Lookup(infoHash, 1)
 	if len(finalList) == 0 {
+		o.Logger.Warn("Discover: no providers encontrados (quizá TTL o bootstraps fallaron)")
 		return fmt.Errorf("Discover: no providers encontrados (quizá TTL o bootstraps fallaron)")
 	}
 
