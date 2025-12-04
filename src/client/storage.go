@@ -2,9 +2,12 @@ package client
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"src/overlay"
 	"src/peerwire"
 	"sync"
+	"time"
 )
 
 type ComputeLeftFunc func() int64
@@ -118,6 +121,15 @@ func ConnectToPeers(peers []PeerInfo, infoHash [20]byte, peerId string,
 		seen[peerInfo.Addr] = struct{}{}
 		fmt.Printf("Peer: %s\n", peerInfo.Addr)
 
+		// Probe: verificar que el puerto realmente escucha antes de intentar handshake
+		// (evita errores con providers stale del overlay)
+		conn, err := net.DialTimeout("tcp", peerInfo.Addr, 2*time.Second)
+		if err != nil {
+			fmt.Printf("  [SKIP] Peer inaccesible: %v\n", err)
+			continue
+		}
+		conn.Close() // solo verificamos, cerramos la conexión de prueba
+
 		var peerIdBytes [20]byte
 		copy(peerIdBytes[:], []byte(peerId))
 
@@ -165,4 +177,30 @@ func SendStoppedAnnounce(announceURL, infoHashEncoded, peerId string, listenPort
 	} else {
 		fmt.Println("[SHUTDOWN] Event=stopped enviado correctamente")
 	}
+}
+
+func SendStoppedAnnounceOverlay(announceURL, infoHashEncoded, peerId string, listenPort int,
+	fileLength int64, computeLeft ComputeLeftFunc, hostname string,
+	ov *overlay.Overlay, providerAddr string) {
+
+	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
+	left := computeLeft()
+	downloaded := fileLength - left
+
+	var err error
+
+	if ov != nil {
+		ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: left})
+		fmt.Println("[SHUTDOWN] Anuncio enviado al overlay")
+	} else {
+		_, err = SendAnnounce(announceURL, infoHashEncoded, peerId,
+			listenPort, 0, downloaded, left, "stopped", hostname)
+
+		if err != nil {
+			fmt.Println("[ERROR] No se pudo enviar stopped:", err)
+		} else {
+			fmt.Println("[SHUTDOWN] Event=stopped enviado correctamente")
+		}
+	}
+
 }

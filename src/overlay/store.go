@@ -101,3 +101,32 @@ func (s *Store) ToJSON(infoHash string) ([]byte, error) {
 	}
 	return json.Marshal(list)
 }
+
+// AllProviders returns a snapshot of all providers for all infoHashes.
+func (s *Store) AllProviders() map[string][]ProviderMeta {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make(map[string][]ProviderMeta)
+	for infoHash, m := range s.records {
+		list := make([]ProviderMeta, 0, len(m))
+		for _, pm := range m {
+			list = append(list, pm)
+		}
+		out[infoHash] = list
+	}
+	return out
+}
+
+// Replace replaces the provider list for a single infoHash.
+// Useful after filtering dead peers.
+func (s *Store) Replace(infoHash string, providers []ProviderMeta) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	m := make(map[string]ProviderMeta)
+	for _, pm := range providers {
+		m[pm.Addr] = pm
+	}
+	s.records[infoHash] = m
+}
