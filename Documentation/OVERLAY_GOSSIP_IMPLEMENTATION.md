@@ -1,6 +1,6 @@
 ## Overlay Gossip — Implementación y guía
 
-Fecha: 14 de noviembre de 2025
+Fecha: 18 de noviembre de 2025
 
 Este documento resume los cambios realizados para implementar un prototipo de descubrimiento distribuido basado en gossip (overlay) y su integración con el cliente BitTorrent existente en este repositorio. Explica los componentes nuevos, cómo probar localmente, limitaciones actuales y pasos siguientes recomendados.
 
@@ -128,3 +128,197 @@ Si quieres, puedo:
 
 ---
 Archivo generado automáticamente que documenta la implementación del overlay gossip del repositorio.
+
+
+
+# 🚨 Problemas actuales de tu overlay (versión “bootstrap fijo + full-push gossip”)
+1. Dependencia rígida de peers bootstrap (single point of failure encubierto)
+
+Tu cliente:
+
+- Arranca solo con la lista estática --bootstrap.
+
+- Nunca aprende otros nodos.
+
+- Todos los gossip y lookups van siempre a los mismos.
+
+Qué pasa:
+Si los bootstrap:
+
+- se caen,
+
+- pierden red,
+
+- o simplemente no responden…
+
+➡️ tu descubrimiento se muere.
+El overlay no “se regenera”. No hay forma de encontrar más peers.
+
+2. Red con topología estática
+
+Cada nodo está conectado solo a esos bootstrap.
+
+Efecto práctico:
+
+- No hay conectividad redundante.
+
+- No hay malla.
+
+- No crece la red entre nodos nuevos.
+
+- La información no se propaga más allá del vecindario inicial.
+
+- Resultado: gossip limitado, convergencia lenta o incompleta.
+
+3. Gossip full-push no escala
+
+Cada X segundos, cada nodo envía todos los providers por todos los infohashes a todos los bootstrap.
+
+- Pequeña red → funciona.
+- Red de 50–100 nodos → saturas ancho de banda y CPU.
+
+- No es tolerancia a fallos, pero sí afecta la disponibilidad.
+
+4. No hay detección activa de fallos
+
+No hay:
+
+- health checks
+
+- heartbeats
+
+- timeouts agresivos
+
+- eviction de nodos muertos
+
+Solo TTL para providers, no para peers.
+
+Si un bootstrap muere, queda ahí para siempre, ocupando slot inútil.
+
+5. Lookup parcial y con baja cobertura
+
+Lookup():
+
+usa solo los bootstrap. Pregunta solo a 3 nodos y no itera
+
+Si la info no está en ese set → te devuelve vacío aunque exista en la red.
+
+6. No hay descubrimiento progresivo
+
+Los nodos no comparten su propia lista de peers.
+
+Eso mata:
+
+- recuperación ante fallos
+
+- expansión del overlay
+
+- resiliencia ante churn
+
+# 🛠️ Soluciones claras (sin reescribir tu overlay entero)
+## ✅ 1. Kademlia-lite: lista dinámica de peers
+
+Implementa un “bucket” simple:
+
+- cada nodo mantiene hasta K = 20 peers
+
+- si un bootstrap responde → lo mantienes
+
+- si no responde → lo eliminas
+
+- cuando recibes gossip/lookup → agregas a quien te contacta
+
+Resultado:
+🔧 La red se vuelve autoexpandible.
+💪 Si un bootstrap muere, el nodo ya aprendió otros peers.
+
+## ✅ 2. Lookup iterativo (semi-Kademlia)
+
+Tu lookup actual:
+
+- local → bootstrap → done
+
+
+Mejor:
+
+- local → peers más cercanos → nuevos peers → repetir
+
+
+Hasta que no haya nodos “más cercanos” al infoHash.
+
+Esto garantiza que encontras al proveedor si existe (convergencia).
+
+## ✅ 3. Gossip push-pull con diffs (reduces carga + mejora convergencia)
+
+En vez de mandar TODO cada vez:
+
+- envías resumen (hashes / timestamps)
+
+- si el receptor detecta diferencias → pide solo lo nuevo
+
+Beneficios:
+
+- convergencia más rápida
+
+- menos ancho de banda
+
+- menos necesidad de depender de bootstrap
+
+## ✅ 4. “Peer exchange” al estilo BitTorrent
+
+Cuando haces gossip/lookup, agrega en la respuesta:
+
+```json
+"peers": [listado de peers del receptor]
+```
+
+Cada nodo va aprendiendo nuevos peers naturalmente.
+
+## ✅ 5. Health checks simples
+
+Cuando un peer falla 2–3 veces:
+
+- se elimina del bucket
+
+- se reemplaza con nodos nuevos que vayas aprendiendo
+
+- Esto evita “lista podrida”.
+
+## ✅ 6. Bootstrap redundante
+
+Permitir:
+
+- 5–10 direcciones bootstrap que reconstruyan la red inicial
+
+Pero luego:
+no deben ser obligatorios gracias al bucket dinámico.
+
+# 🧨 Resumen duro
+
+1. Problemas actuales:
+
+- Dependencia absoluta en bootstrap (si caen, muere el descubrimiento).
+
+- Topología fija, la red no se autoexpande.
+
+- Gossip excesivo y sin optimización.
+
+- Lookup incompleto (no explora la red).
+
+- Sin mecanismos para aprender nuevos peers.
+
+- Ausencia de tolerancia a fallos de nodos.
+
+2. Soluciones recomendadas:
+
+- Bucket dinámico estilo Kademlia-lite.
+
+- Lookup iterativo con vecinos “más cercanos”.
+
+- Gossip push-pull con diffs.
+
+- Peer Exchange en respuestas.
+
+- Health checks + eviction de nodos muertos.
+
+- Bootstrap solo como arranque, no como dependencia permanente.

@@ -41,3 +41,18 @@ archives
 # env specific configuration
 .env.local
 
+# Go build output
+
+src/client/cmd/main
+src/client/cmd/client
+
+src/main
+
+# report
+report/informe.aux
+report/informe.log
+report/informe.out
+report/informe.toc
+report/informe.synctex.gz
+report/informe.fls
+report/informe.fdb_latexmk

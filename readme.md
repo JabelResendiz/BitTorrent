@@ -1,90 +1,306 @@
 
-# BitTorrent
+# ✅ **BitTorrent**
 
+Este proyecto implementa un sistema BitTorrent distribuido con descubrimiento P2P mediante **Docker**, **Go** y **overlay networks**.
 
+---
 
-## Docker Commands
-
-> Constuir las imagenes dentro de src
-
-```bash
-docker build -t client -f client/Dockerfile .
-
-docker build -t tracker -f tracker/Dockerfile .
-
-```
-
-PC 1:
+## 📦 **1. Clonar el proyecto**
 
 ```bash
-
-docker swarm init
-
-docker swarm join-token manager
-
-# obtener un token y pasarlo a la pc2
-
-docker network create --driver overlay <nombre de la red>
-
+git clone https://github.com/JabelResendiz/BitTorrent.git
+cd BitTorrent/src
 ```
 
-PC2:
+---
+
+## 🏗️ **2. Construir las imágenes Docker**
+
+Ejecutar desde la carpeta `src`:
 
 ```bash
-
-#comando del manager del token
-
-docker network ls
-
-
+docker build -t client_img -f client/Dockerfile .
+docker build -t tracker_img -f tracker/Dockerfile .
 ```
 
-### 🛰️ Run Tracker
-Abre una terminal en la raíz del proyecto(src) y ejecuta:
+---
+
+## 🚀 **3. Crear el archivo .torrent y preparar archivos**
+
+1. Coloca el archivo original a compartir en:
+
+```lua
+archives/seeder/
+```
+
+2. Genera el `.torrent` usando `mktorrent`
+
+```bash
+sudo apt install mktorrent
+mktorrent -a http://tracker:8080/announce \
+  -o archives/torrents/video.torrent \
+  archives/seeder/video.mp4
+```
+
+Donde:
+
+* `-a` → URL del tracker(si es usando la red overlay no importa esto)
+* `-o` → ruta donde guardar el .torrent
+* último argumento → archivo original
+
+Asegúrate de que exista:
+
+```lua
+archives/torrents/video.torrent
+```
+
+---
+
+## 🧰 **4. Ejecutar TODO automáticamente (recomendado)**
+
+Usando tu script `run_containers.sh`:
+
+```bash
+chmod +x script/run_containers.sh
+./script/run_containers.sh
+```
+
+Este script:
+
+* Crea la red `bittorrent` si no existe
+* Verifica que exista el `.torrent`
+* Limpia contenedores anteriores
+* Lanza el **seeder**
+* Lanza múltiples **leechers**
+* Cada cliente se inicia con su puerto, hostname y bootstrap correspondiente
+
+Si deseas correrlo **sin reconstruir la imagen**, ejecuta:
+
+```bash
+./script/run_containers.sh --no-build
+```
+
+---
+
+## 🛠️ **5. Ejecución manual (sin script)**
+
+### 🛰️ Ejecutar el Tracker
+
+En una terminal:
 
 ```bash
 go run tracker/cmd/main.go
 ```
 
-Esto lanzará e tracker HTTP escuchando en `localhost:8080`
+Esto corre el tracker en:
 
-Si todo va bien, se debe ver algo como:
-
-```pgsql
-2025/10/10 23:41:15 tracker listening on :8080 interval=1800s data=tracker_data.json
+```lua
+localhost:8080
 ```
-### 💻 Run Client
-Abre otra terminal y ejecutar:
+
+Salida esperada:
+
+```lua
+tracker listening on :8080 interval=1800s data=tracker_data.json
+```
+
+---
+
+### 💻 Ejecutar el Cliente
+
+En otra terminal:
 
 ```bash
-go run client/cmd/main.go --torrent="./vid.torrent" --archives="¨~/<carpeta home>"
+go run client/cmd/main.go \
+  --torrent="./archives/torrents/video.torrent" \
+  --archives="./archives/seeder"
 ```
 
-La salida esperada será algo como :
+Salida típica:
 
-```perl
-Tracker request:  http://localhost:8080/announce?info_hash=%BA%4E...
-Tracker responde:  map[complete:0 incomplete:1 interval:1800 peers:]
+```lua
+Tracker request:  http://localhost:8080/announce?info_hash=...
+Tracker responde: map[complete:0 incomplete:1 interval:1800 peers:]
 ```
 
-En `tracker_data.json` se pueden ver los peers registrados por el tracker.
+Los peers registrados aparecerán en:
 
-## Metainfo File (.torrent)
-Los archivos `.torrent` están bencodeados, que es un formato simple para codificar información (no en texto plano), más fácil que parsear que un XML y un JSON. 
+```lua
+tracker_data.json
+```
 
-- Todos los datos en un archivo metainfo están bencodeados. Un `.torrent` es un diccionario bencodeado que contiene las siguientes claves (todas las cadenas en UTf-8):
-    - info : diccionario que describe el/los archivos del torrent. Puede ser :
-        - single-file (un solo archivo)
-        - multi-file (multiples archivos)
-    - announce: la URL del tracker (cadena)
-    - announce-list : (opcional) extensión para compatibilidad retroactica(lista de lista de cadenas)
-    - creation date : (opcional) fecha de creación en formato UNIX epoch (entero, segundos desde 1-ene-1970)
-    - comment: (opcional) comentarios libres del autor cadena
-    - created by: (opcional) nombre y versión del programa que creó el `.torrent`.
-    - encoding : (opcinal) formato de codificación de cadenas usado para la parte de pieces dentro del diccionario `info`
+---
 
+## 🧵 **6. Ejecutar clientes dentro de Docker (manual)**
 
-## Metainfo File (.torrent)
+Ejemplo un cliente seeder:
+
+```bash
+docker network create bittorrent
+
+docker run -d --name seeder --network bittorrent \
+  -v "$(pwd)/archives/seeder":/data \
+  -v "$(pwd)/archives/torrents":/torrents:ro \
+  -p 6000:6000 \
+  client_img \
+  --torrent=/torrents/video.torrent \
+  --archives=/data \
+  --hostname=seeder \
+  --discovery-mode=overlay \
+  --overlay-port=6000
+```
+
+Ejemplo cliente leecher con bootstrap:
+
+```bash
+docker run -d --name leecher1 --network bittorrent \
+  -v "$(pwd)/archives/leecher1":/data \
+  -v "$(pwd)/archives/torrents":/torrents:ro \
+  -p 6001:6001 \
+  client_img \
+  --torrent=/torrents/video.torrent \
+  --archives=/data \
+  --hostname=leecher1 \
+  --discovery-mode=overlay \
+  --overlay-port=6001 \
+  --bootstrap=seeder:6000
+```
+
+---
+
+## 🐳 **7. Ejecutar múltiples clientes en varias PCs usando Docker Swarm**
+
+Para permitir que varios *clients* (leecher/seeder) corran en diferentes máquinas dentro de una red distribuida, utilizamos **Docker Swarm** y una **red overlay** compartida.
+
+---
+
+### 🖥️ **Paso 1 — Construir las imágenes (solo una vez)**
+
+Desde la carpeta `src/`:
+
+```bash
+docker build -t client -f client/Dockerfile .
+docker build -t tracker -f tracker/Dockerfile .
+```
+
+Debes copiar estas imágenes a cada PC, o subirlas a un registry privado si lo deseas.
+
+---
+
+### 🖥️ PC 1 — **Nodo Manager del Swarm**
+
+Inicializa el cluster:
+
+```bash
+docker swarm init
+```
+
+Obtén el token para agregar más nodos:
+
+```bash
+docker swarm join-token manager
+```
+
+(El comando resultante debes copiarlo hacia las otras PCs).
+
+Luego crea la red overlay distribuida:
+
+```bash
+docker network create --driver overlay bittorrent-net
+```
+
+---
+
+### 🖥️ PC 2 (y cualquier otra) — **Nodos Worker**
+
+En esta PC pega el comando generado por `join-token`, por ejemplo:
+
+```bash
+docker swarm join --token <TOKEN>
+```
+
+Luego comprueba que la red overlay está disponible:
+
+```bash
+docker network ls
+```
+
+Verás algo como:
+
+```lua
+bittorrent-net   overlay   swarm
+```
+
+---
+
+### 🚀 **Deploy Manual de Servicios (Tracker y Clientes)**
+
+#### **1. Tracker (en cualquier nodo del cluster)**
+
+```bash
+docker service create \
+  --name tracker \
+  --network bittorrent-net \
+  --publish 8080:8080 \
+  tracker
+```
+
+#### **2. Seeder y Leechers**
+
+Ejemplo: correr un seeder y dos leechers distribuidos automáticamente por el Swarm:
+
+```bash
+docker run -it --name seeder --network bittorrent-net \
+  -v "$(cd "$(dirname "$0")/.." && pwd)/archives/seeder":/data \
+  -v "$(cd "$(dirname "$0")/.." && pwd)/archives/torrents":/torrents:ro \
+  -p 6000:6000 \
+  client_img \
+  --torrent=/torrents/pelicula.torrent \
+  --archives=/data \
+  --hostname=seeder \
+  --discovery-mode=overlay \
+  --overlay-port=6000
+
+docker run -it --name leecher1 --network bittorrent-net \
+  -v "$(cd "$(dirname "$0")/.." && pwd)/archives/leecher1":/data \
+  -v "$(cd "$(dirname "$0")/.." && pwd)/archives/torrents":/torrents:ro \
+  -p 6001:6001 \
+  client_img \
+  --torrent=/torrents/pelicula.torrent \
+  --archives=/data \
+  --hostname=leecher1 \
+  --discovery-mode=overlay \
+  --overlay-port=6001 \
+  --bootstrap=seeder:6000
+```
+
+Las réplicas se distribuyen automáticamente por las PCs del Swarm.
+
+---
+
+### 🧪 Verificar que el cluster funciona
+
+En cualquier PC del cluster:
+
+```bash
+docker node ls
+docker service ls
+docker service ps tracker
+docker service ps seeder
+docker service ps leecher
+```
+
+---
+
+### 🎉 Resultado
+
+* Los clientes y tracker(si fuese necesario) están corriendo en **varias máquinas distribuidas**
+* Se comunican mediante una **red overlay**
+* Docker Swarm balancea y administra automáticamente los nodos
+
+---
+
+## 📄 **8. Especificación del Archivo .torrent (Metainfo)**
 
 Los archivos `.torrent` están **bencodeados**.  
 Un `.torrent` es un **diccionario** con estas claves principales (todas cadenas en **UTF-8**):
@@ -232,8 +448,7 @@ e
 
 ---
 
-
-## Tracker
+## 📘 **9. Módulo Tracker**
 
 El tracker no guarda “quién tiene cada pieza del archivo”, sino quién está participando en ese torrent en general.
 
@@ -363,6 +578,7 @@ Content-Length: 68
 d8:intervali1800e8:completei12e10:incompletei34e5:peers12:\xC0\xA8\x01\xD2\x1A\xE1\xC0\xA8\x01\xD3\x1A\xE2e
 ```
 
+---
 
 ### Convención de Tracker Scrape
 
@@ -406,8 +622,9 @@ GET /scrape?info_hash=%12%34%56%78... HTTP/1.1
 Host: tracker.ejemplo.com:6969
 ```
 
+---
 
-## Peer wire protocol (TCP)
+## 🌐 **10.Peer Wire Protocol (TCP)**
 
 - un cliente debe mantener información de estado para cada conexión que tenga con un peer remoto.
   - **chocked:** indica si el peer remoto ha "estrangulado" a este cliente. Cuando sucede , le notifica que no responderá a solicitudes hasta que sea desestrangulado. El cliente no debe enviar solicitudes de bloques y debe considerar todas las solicitudes pendientes como descartadas por el peer remoto
@@ -468,8 +685,9 @@ El protocolo consiste en un handshake inicial. Despues , los peers se comunican 
 
 - ***port(<len=0003><id=9><listen-port>):*** mensaje port es envidado por versiones recientes de Mainline que implementar un tracker DHT. listen-port (puerto donde el nodo DHT del peer escucha), este peer debe ser insertado en la tabla de ruteo local si se soporta DHT.
 
+---
 
-## Algoritmos
+## 🧠 **11. Algoritmos**
 
 Estrategias internas de los clientes BitTorrent para mejorar rendimiento y eficiencia. El protocolo base define qué mensajes se pueden enviar(interested, request, piece, ...) pero no cuándo ni cuántos mandar.
 
@@ -514,23 +732,24 @@ Estrategias internas de los clientes BitTorrent para mejorar rendimiento y efici
 - Si pasa más de 1 min sin recibir datos, el cliente lo marca como "snubbed" y deja de subirle, salvo en el caso de `optimistic unchoke`
 - EL objetivo es evitar perder tiepo con peers que no colaboran.
 
+---
 
-# Extensiones oficiales del protocolo
+## 🛠️ **12. Extensiones oficiales del protocolo**
 
-## Extensiones Fast Peers
+### Extensiones Fast Peers
 - bit reservado : el tercer bit menos significativo del 8° byte reservado `reserved[7] |= 0x04`
 - esto permite acelerar el arranque de un peer nuevo en el swarm (la rede de pares compartiendo un torrent).
 - Normalmente , si un peer esta choked, no puede pedir piezas
 - Con esta extensión , ciertos peers pueden descargar piezas específicas aunque estén choked, lo que acelera el sincronización inicial
 
-## DHT
+### DHT
 - bit reserado `reserved[7] |= 0x01` (último bir del octavo byte).
 - permite descubir peers sin necesidad de un tracker centralizado. Cada peer se convierte en un nodo de una red DHT, donde se guarda información sobre qué oeers tiene qué torrents.
 - el sistema sigue funcionando si el tracker cae
 - los peers se buscan entre sí usanod una table hash distribuida (basada en kademlia)
 - BEP-32 agrega soporte para IPV6
 
-## Connection Obfuscation( Message Stream Encryption- MSE)
+### Connection Obfuscation( Message Stream Encryption- MSE)
 
 - no tiene bit reservado específico
 - permite cifrar o camuflar las conexiones BitTorrent para evitar que los proveedores de internet, detecten o limiten el trafico torrent. 
@@ -538,40 +757,41 @@ Estrategias internas de los clientes BitTorrent para mejorar rendimiento y efici
 - ayuda a evadir el trafic shapping o throttling
 - mejora la privacidad
 
-## WebSeeding
+### WebSeeding
 - no usa bit reservado
 - permite que un servidor HTTP actúe como seed(fuente de datos), además de los peers normales
 - en resumen, pueeds descargar partes del torrent desde un servidor web, no solo de otros usuarios
 
-## Extension Protocol 
+### Extension Protocol 
 - bit reservado `reserved[5] = 0x10` 8caurto bit mas signficativo del sexto byte
 - define una forma genérica para anuciar y negociar extensiones entre cliente
 - cada extensión adicional (por ejemplo DHT, metadata exchange, peer exchange) se anuncia y negocia mediante este protocolo
 
-## extensión negotiation protocol
+### Extensión negotiation protocol
 - bite servado el 47 y 48
 - permite decidir que extensio usar si ambos peers soportan varias.
 - evita conflictos cuando dos cliete implementan diferentes sistema de extensión.
 
-## bittorrent location aware-protocol
+### Bittorrent location aware-protocol
 - bit reservado: 21
 - permite que los peers tomen en cuanta la ubicación geográfica de otros peers. De esa forma pueden prefierir descargar de peers más cercanos, reduciendo latencia y carga de red
 
-## SimpleBT extension protoc0l
+### SimpleBT extension protoc0l
 - bit reservado primer byte `0x01`
 - agrega intercambio de informacion de peers y estadísticas de conexión.
 - fue usado en versiones antiguas de SImpleBot
 
-## BitComet Extension Protocol
+### BitComet Extension Protocol
 - bit reservado primeros dos bytes `ex`
 - usado para intecambir informacion adicional(autenticacipon, estadísticas, mensaje del chat)
 - no está docuemntado oficialmente, se conoce por ingeniería inversa
 
+---
 
-
-# Referencias 
+## 📚 **13. Referencias**
 
 - Peer Exchange (PEX) : https://www.bittorrent.org/beps/bep_0011.html
 - DHT Protocol : https://www.bittorrent.org/beps/bep_0005.html
 - Wiki de BitTorrent: https://wiki.theory.org/BitTorrentSpecification
 
+---
