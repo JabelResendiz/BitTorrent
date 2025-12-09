@@ -183,16 +183,17 @@ func SendStoppedAnnounceOverlay(announceURL, infoHashEncoded, peerId string, lis
 	fileLength int64, computeLeft ComputeLeftFunc, hostname string,
 	ov *overlay.Overlay, providerAddr string) {
 
-	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 	left := computeLeft()
 	downloaded := fileLength - left
 
 	var err error
 
 	if ov != nil {
+		fmt.Println("[SHUTDOWN] Enviando event=stopped al overlay...")
 		ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: left})
-		fmt.Println("[SHUTDOWN] Anuncio enviado al overlay")
+		fmt.Println("[SHUTDOWN] Event=stopped enviado al overlay")
 	} else {
+		fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 		_, err = SendAnnounce(announceURL, infoHashEncoded, peerId,
 			listenPort, 0, downloaded, left, "stopped", hostname)
 

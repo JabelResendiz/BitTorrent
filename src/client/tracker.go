@@ -38,9 +38,10 @@ func SendAnnounce(announceURL, infoHashEncoded, peerId string, port int,
 		params.Set("event", event)
 	}
 
-	if event == "started" {
+	switch event {
+	case "started":
 		params.Set("numwant", "50")
-	} else if event == "stopped" {
+	case "stopped":
 		params.Set("numwant", "0")
 	}
 
