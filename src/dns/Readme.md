@@ -1,140 +1,166 @@
-# BIBLIOGRAFÍA
 
-```bash
-cd src/dns
-go run cmd/main.go
+# BitTorrent + DNS Distribuido con Gossip
 
-chmod +x add_records.sh
-./add_records.sh
-
-curl -s -X POST "http://localhost:6969/add" -H 'Content-Type: application/json' -d '{"name":"free.local","ip":"10.1.0.15","ttl":360}'
-
-dig @127.0.0.1 -p 8053 free.local
-```
-
-## REDES OVERLAY EN DOCKER SWARM
-
-- Docker crea una **red virtual distribuida (overlay)** que conecta contenedores en distintos hosts como si compartieran una misma LAN.
-- Cada host crea una **interfaz virtual VXLAN**, que encapsula los paquetes UDP sobre el puerto **4789**.
-- Docker utiliza un **protocolo gossip** (basado en SWIM/Serf) para intercambiar la tabla de rutas y el estado de los endpoints de la red overlay.
-- Cada contenedor obtiene una **IP virtual interna** que solo es válida dentro de la red overlay.
-
-### Resolución de nombres interna
-
-Cuando un contenedor intenta resolver un nombre como `tracker`, el proceso es el siguiente:
-
-1. La consulta DNS dentro del contenedor se envía a `127.0.0.11`, el **DNS interno de Docker**.
-2. Docker verifica si el nombre pertenece a un **servicio registrado** en la red overlay.
-3. Docker resuelve `tracker` a la **IP virtual del servicio** (o a una lista de IPs si hay múltiples réplicas).
-4. La **capa overlay** encapsula el paquete y lo envía a través del túnel VXLAN al host donde reside el contenedor destino.
+Este proyecto implementa un cliente BitTorrent que incluye soporte para un **DNS distribuido** y un **overlay network basado en gossip** para sincronizar información entre nodos. Además, se explica cómo Docker Swarm maneja redes overlay y la propagación de información sin broadcast.
 
 ---
 
-## LIMITACIONES DEL BROADCAST EN REDES OVERLAY
+## Estructura de Archivos
 
-- Las redes overlay **no soportan broadcast ni multicast reales**.
-- En una red Swarm, los paquetes enviados a direcciones como `255.255.255.255` o `10.x.x.255` **solo llegan a los contenedores dentro del mismo host**.
-- Esto ocurre porque:
-  - VXLAN encapsula tráfico **unicast**, no broadcast.
-  - Los bridges virtuales de Docker **filtran broadcast y multicast** por diseño.
-  - La capa VXLAN opera en **nivel 3 (IP)**, no en nivel 2 (Ethernet).
+### `src/dns`
+Contiene la implementación del servidor DNS distribuido.
 
-> En resumen: **no es posible enviar mensajes broadcast UDP entre todos los nodos de un Swarm**. Solo se propagan dentro del host local.
+- **`main.go`**: 
+  - Inicializa el servidor DNS (`UDP`) en el puerto `8053`.
+  - Inicializa el servidor HTTP API para agregar, eliminar y listar registros en `6969`.
+  - Inicia el servicio de gossip para sincronizar registros entre peers.
+  - Ejecución típica:
+    ```bash
+    cd src/dns
+    go run cmd/main.go
+    ```
+
+- **`internal/store.go`**: 
+  - Mantiene los registros DNS locales en un **map thread-safe**.
+  - Métodos principales: `Add`, `Delete`, `Get`, `List`.
+
+- **`internal/gossip.go`**: 
+  - Implementa un **protocolo gossip** simple.
+  - Cada nodo:
+    - Escucha conexiones TCP entrantes (`:5300`).
+    - Envía periódicamente sus registros a todos los peers conocidos.
+  - Los mensajes pueden ser de tipo `update` para sincronizar registros.
+
+- **`internal/dns.go`**:
+  - Implementa el **resolver UDP**.
+  - Maneja la estructura de mensajes DNS: header, question, answer.
+  - Construye respuestas A para IPv4 y controla TTL dinámico.
+  - Devuelve `NXDOMAIN` si el registro no existe o expiró.
+
+- **`internal/models.go`**:
+  - Define estructuras clave:
+    - `Record`: registro DNS (nombre → IP), TTL y timestamp.
+    - `GossipMessage`: mensaje de gossip para sincronizar registros.
+
+- **`internal/logger.go`**:
+  - Logger modular con colores para distinguir niveles de log (`INFO`, `WARN`, `ERROR`, `DEBUG`).
+
+- **`dns/http_client.go` y `dns/register.go`**:
+  - Helpers para registrar un nombre/IP en el DNS a través del API HTTP.
+  - Cliente HTTP personalizado para resolver usando el DNS local.
+
+- **`add_records.sh`**:
+  - Script para agregar registros de ejemplo vía API.
+
+- **Ejemplo de uso**:
+  ```bash
+  curl -s -X POST "http://localhost:6969/add" \
+      -H 'Content-Type: application/json' \
+      -d '{"name":"free.local","ips":["10.1.0.15"],"ttl":360}'
+  dig @127.0.0.1 -p 8053 free.local
+  ````
+  
+---
+
+### `src/overlay`
+
+Contiene el overlay network para el cliente BitTorrent.
+
+* **`store.go`**:
+
+  * Mantiene un mapeo `infoHash → providers`.
+  * TTL configurable para limpiar peers obsoletos.
+  * Métodos:
+
+    * `Announce`: agrega o actualiza un provider.
+    * `Merge`: fusiona providers de mensajes gossip.
+    * `Lookup`: devuelve los peers más recientes.
+    * `ToJSON`: serializa la lista de providers a JSON.
+
+* **`gossip.go`**:
+
+  * Implementa gossip unicast para propagar estado.
+  * Permite:
+
+    * Escuchar peers entrantes (`TCP`).
+    * Responder consultas `lookup`.
+    * Enviar actualizaciones periódicas a peers conocidos (`periodicGossip`).
 
 ---
 
-## PROPAGACIÓN DE INFORMACIÓN ENTRE NODOS
+### `src/client`
 
-Como alternativa al broadcast, Docker Swarm utiliza un **protocolo gossip unicast**:
+Contiene la lógica principal del cliente BitTorrent.
 
-- Cada nodo mantiene una lista parcial de peers.
-- Envía actualizaciones de estado periódicamente a algunos de ellos.
-- Los peers replican los mensajes con sus propios contactos.
-- De esta forma, la información termina distribuyéndose por todo el cluster sin necesidad de broadcast.
+* **`main.go`**:
 
-Este enfoque:
-- Reduce el tráfico total en la red.
-- Permite tolerancia a fallos (si un nodo cae, el resto sigue propagando información).
-- Es el mismo mecanismo que usa Docker internamente para sincronizar su DNS y el estado de los servicios.
+  * Carga metadatos del torrent.
+  * Inicializa listener TCP para recibir conexiones de peers.
+  * Configura overlay gossip si está habilitado.
+  * Se conecta a peers locales y del tracker.
+  * Ejecuta announces periódicos y de completación.
+  * Maneja shutdown limpio.
 
----
+* **`overlay_integration.go`**:
 
-## DISEÑO DE UN DNS DISTRIBUIDO
-
-En un DNS distribuido diseñado para funcionar en Swarm:
-
-1. **Cada nodo ejecuta un servidor DNS local** (por ejemplo, en un contenedor).
-2. Cada uno mantiene una **tabla local de registros** `(nombre → IP)` correspondiente a los contenedores o servicios de su host.
-3. Periódicamente, cada nodo **propaga los cambios** (altas, bajas o actualizaciones de registros) a otros nodos mediante **gossip unicast**.
-4. Si un nodo se desconecta, los demás **mantienen su información local** hasta que expire su TTL.
-
-Esto garantiza que:
-- No exista un único punto de fallo.
-- La resolución funcione incluso si un nodo cae.
-- Los registros se mantengan eventualmente consistentes entre todos los nodos.
+  * Inicializa el overlay con la lista de bootstrap peers.
+  * Arranca el listener TCP de gossip.
 
 ---
 
-## FORMATO DEL MENSAJE DE DNS
+## Redes Overlay en Docker Swarm
 
-### 1. Estructura general
+* Docker crea una **red virtual distribuida (overlay)** que conecta contenedores en distintos hosts.
+* Cada host crea una **interfaz virtual VXLAN** (UDP 4789).
+* La propagación de información se hace mediante **gossip unicast** en lugar de broadcast.
+* Resolución de nombres:
 
-Un mensaje DNS se divide en las siguientes secciones:
+  * Contenedor → DNS interno Docker `127.0.0.11`.
+  * Docker traduce al servicio o contenedor destino.
+* Limitaciones:
 
-- **Header (12 bytes)**: contiene identificador, flags y conteos de preguntas/respuestas.
-- **Question Section**: el dominio o nombre solicitado.
-- **Answer Section**: la respuesta (si existe).
-- **Authority Section / Additional Section**: opcionales, para delegación o datos complementarios.
+  * No hay broadcast UDP entre hosts.
+  * El tráfico broadcast solo alcanza contenedores en el mismo host.
+* Ventaja:
 
-### 2. Tipos de registros (RR Types)
-
-| Tipo | Descripción |
-|------|--------------|
-| **A** | Dirección IPv4 |
-| **AAAA** | Dirección IPv6 |
-| **CNAME** | Alias de otro dominio |
-| **MX** | Servidor de correo |
-| **NS** | Servidor de nombres |
-| **TXT** | Texto libre (informativo) |
-
-### 3. TTL (Time to Live)
-
-- Cada registro incluye un valor **TTL**, expresado en segundos.
-- Indica cuánto tiempo puede mantenerse en caché antes de volver a consultarse.
-- Es esencial en sistemas distribuidos para controlar la caducidad de información desactualizada.
-
-### 4. Clases
-
-- Generalmente se utiliza la clase **IN (Internet)**.
-- Otras clases existen, pero son raras en la práctica.
-
-### 5. Jerarquía y delegación
-
-- Un servidor puede ser **autoridad** de un dominio o subdominio (por ejemplo, `example.com`).
-- Si no conoce la respuesta, puede **reenviar la consulta** a otro servidor superior o raíz.
-- Esto permite que los servidores formen una **jerarquía distribuida**.
+  * Red tolerante a fallos.
+  * Actualización eventual de registros DNS distribuidos.
 
 ---
 
-## REQUISITOS MÍNIMOS DE UNA IMPLEMENTACIÓN DNS
+## Cómo funciona el gossip en tu DNS
 
-Una implementación mínima y correcta debe:
-
-1. Responder con los campos DNS adecuados.
-2. Mantener una **zona local** de dominios e IPs.
-3. Responder con **`NXDOMAIN`** si el dominio no existe.
-4. Reenviar o preguntar a otros nodos si no conoce la respuesta.
-5. Implementar **TTL** y mecanismos de expiración de caché.
-6. En un entorno distribuido (como Docker Swarm), **sincronizar su zona** usando gossip unicast.
+1. Cada nodo tiene su **tabla de registros local**.
+2. Al agregar o actualizar un registro, se notifica a los peers mediante gossip (`TCP 5300`).
+3. Cada nodo replica la información de otros nodos.
+4. TTL garantiza que registros expirados no se propaguen.
+5. La consistencia es **eventual**, no instantánea.
 
 ---
 
-## CONCLUSIÓN
+## Mejoras posibles
 
-En redes overlay de Docker Swarm:
-- El **broadcast** no está disponible entre nodos.
-- La forma correcta de propagar información es mediante **gossip unicast**.
-- Esto permite construir un **DNS distribuido tolerante a fallos**, donde cada nodo mantiene su propia copia de los registros y la actualiza gradualmente.
+1. **Seguridad**: autenticación entre nodos gossip y en la API.
+2. **Redundancia**: persistir registros en disco para reinicios.
+3. **Optimización de gossip**:
 
-> En otras palabras, la replicación basada en gossip sustituye al broadcast, y la consistencia eventual sustituye a la sincronización instantánea.
+   * Limitar la cantidad de mensajes a peers más recientes.
+   * Compresión de payloads.
+4. **Balanceo de carga DNS**:
+
+   * Round-robin entre múltiples IPs por nombre.
+5. **Monitoreo**:
+
+   * Métricas de registros, peers y latencia de gossip.
+6. **Compatibilidad IPv6** y soporte completo de tipos de RR (CNAME, MX, etc.).
+7. **Simulación en Docker Swarm** para probar escalabilidad del gossip.
+
+---
+
+## Bibliografía
+
+* [Docker Networking Overview](https://docs.docker.com/network/)
+* [Gossip Protocols in Distributed Systems](https://en.wikipedia.org/wiki/Gossip_protocol)
+* [DNS Protocol RFC 1035](https://www.rfc-editor.org/rfc/rfc1035)
+* [BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
 
