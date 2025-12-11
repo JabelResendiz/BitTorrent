@@ -1,34 +1,61 @@
 # ============================================
+# COMPILAR IMÁGENES (hacer primero)
+# ============================================
+
+# Compilar imagen del tracker
+docker build -t tracker_img -f src/tracker/Dockerfile .
+
+# Compilar imagen del cliente
+docker build -t client_img -f src/client/Dockerfile .
+
+# Crear red compartida
+docker network create net
+
+# ============================================
 # TRACKERS DISTRIBUIDOS (3 trackers sincronizados)
 # ============================================
 
 # Tracker 1
-docker run --name tracker1 --network net \
+docker run -d \
+  --name tracker1 \
+  --hostname tracker1 \
+  --network net \
   --publish 8081:8080 \
   --publish 9091:9090 \
-  tracker \
+  tracker_img \
   -sync-peers "tracker2:9090,tracker3:9090"
 
 # Tracker 2
-docker run --name tracker2 --network net \
+docker run -d \
+  --name tracker2 \
+  --hostname tracker2 \
+  --network net \
   --publish 8082:8080 \
   --publish 9092:9090 \
-  tracker \
+  tracker_img \
   -sync-peers "tracker1:9090,tracker3:9090"
 
 # Tracker 3
-docker run --name tracker3 --network net \
+docker run -d \
+  --name tracker3 \
+  --hostname tracker3 \
+  --network net \
   --publish 8083:8080 \
   --publish 9093:9090 \
-  tracker \
+  tracker_img \
   -sync-peers "tracker1:9090,tracker2:9090"
+
+# Ver logs de sincronización
+docker logs -f tracker1
 
 # ============================================
 # MODO STANDALONE (un solo tracker, sin sincronización)
 # ============================================
-docker run --name tracker --network net \
+docker run -d \
+  --name tracker \
+  --network net \
   --publish 8081:8080 \
-  tracker
+  tracker_img
 
 # ============================================
 # CLIENTES
