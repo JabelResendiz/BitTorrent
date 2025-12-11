@@ -11,17 +11,19 @@ import (
 )
 
 type ClientConfig struct {
-	TorrentPath     string
-	ArchivesDir     string
-	Hostname        string
-	PeerId          string
-	InfoHash        [20]byte
-	InfoHashEncoded string
-	AnnounceURL     string
-	FileLength      int64
-	PieceLength     int64
-	ExpectedHashes  [][20]byte
-	FileName        string
+	TorrentPath       string
+	ArchivesDir       string
+	Hostname          string
+	PeerId            string
+	InfoHash          [20]byte
+	InfoHashEncoded   string
+	AnnounceURL       string   // Tracker principal (deprecated, usar AnnounceURLs)
+	AnnounceURLs      []string // Lista de todos los trackers disponibles
+	CurrentTrackerIdx int      // Índice del tracker actualmente en uso
+	FileLength        int64
+	PieceLength       int64
+	ExpectedHashes    [][20]byte
+	FileName          string
 }
 
 func ParseFlags() (string, string, string, string, string, int) {
@@ -71,7 +73,29 @@ func LoadTorrentMetadata(torrentPath, archivesPath string) *ClientConfig {
 		panic(err)
 	}
 
+	// Leer announce principal
 	announce := meta["announce"].(string)
+
+	// Leer announce-list (lista de listas de trackers)
+	var announceURLs []string
+	if announceList, ok := meta["announce-list"].([]interface{}); ok {
+		// announce-list es una lista de listas (por tier)
+		for _, tier := range announceList {
+			if tierList, ok := tier.([]interface{}); ok {
+				for _, url := range tierList {
+					if urlStr, ok := url.(string); ok {
+						announceURLs = append(announceURLs, urlStr)
+					}
+				}
+			}
+		}
+	}
+
+	// Si no hay announce-list, usar solo announce
+	if len(announceURLs) == 0 {
+		announceURLs = []string{announce}
+	}
+
 	info := meta["info"].(map[string]interface{})
 	infoEncoded := bencode.Encode(info)
 	infoHash := sha1.Sum(infoEncoded)
@@ -109,16 +133,23 @@ func LoadTorrentMetadata(torrentPath, archivesPath string) *ClientConfig {
 	}
 
 	cfg := &ClientConfig{
-		TorrentPath:     torrentPath,
-		ArchivesDir:     archivesDir,
-		PeerId:          GeneratePeerId(),
-		InfoHash:        infoHash,
-		InfoHashEncoded: buf.String(),
-		AnnounceURL:     announce,
-		FileLength:      length,
-		PieceLength:     pieceLength,
-		ExpectedHashes:  expectedHashes,
-		FileName:        outName,
+		TorrentPath:       torrentPath,
+		ArchivesDir:       archivesDir,
+		PeerId:            GeneratePeerId(),
+		InfoHash:          infoHash,
+		InfoHashEncoded:   buf.String(),
+		AnnounceURL:       announce,
+		AnnounceURLs:      announceURLs,
+		CurrentTrackerIdx: 0, // Se seleccionará el más cercano después
+		FileLength:        length,
+		PieceLength:       pieceLength,
+		ExpectedHashes:    expectedHashes,
+		FileName:          outName,
+	}
+
+	fmt.Printf("[CONFIG] Trackers encontrados: %d\n", len(announceURLs))
+	for i, url := range announceURLs {
+		fmt.Printf("  [%d] %s\n", i, url)
 	}
 
 	return cfg
@@ -128,4 +159,31 @@ func (cfg *ClientConfig) GetStoragePaths() (tempPath, finalPath string) {
 	tempPath = filepath.Join(cfg.ArchivesDir, cfg.FileName+".part")
 	finalPath = filepath.Join(cfg.ArchivesDir, cfg.FileName)
 	return
+}
+
+// GetCurrentTrackerURL retorna la URL del tracker actualmente seleccionado
+func (cfg *ClientConfig) GetCurrentTrackerURL() string {
+	if cfg.CurrentTrackerIdx >= 0 && cfg.CurrentTrackerIdx < len(cfg.AnnounceURLs) {
+		return cfg.AnnounceURLs[cfg.CurrentTrackerIdx]
+	}
+	if len(cfg.AnnounceURLs) > 0 {
+		return cfg.AnnounceURLs[0]
+	}
+	return cfg.AnnounceURL // Fallback al announce original
+}
+
+// SwitchToNextTracker cambia al siguiente tracker disponible
+func (cfg *ClientConfig) SwitchToNextTracker() bool {
+	if len(cfg.AnnounceURLs) <= 1 {
+		return false // No hay más trackers
+	}
+
+	oldIdx := cfg.CurrentTrackerIdx
+	cfg.CurrentTrackerIdx = (cfg.CurrentTrackerIdx + 1) % len(cfg.AnnounceURLs)
+
+	fmt.Printf("[TRACKER] Cambiando de tracker: %s -> %s\n",
+		cfg.AnnounceURLs[oldIdx],
+		cfg.AnnounceURLs[cfg.CurrentTrackerIdx])
+
+	return true
 }

@@ -51,6 +51,12 @@ func main() {
 		log.Info("=== Modo de descubrimiento: TRACKER (centralizado) ===")
 	}
 
+	// Seleccionar tracker más cercano (solo en modo tracker)
+	if ov == nil && len(cfg.AnnounceURLs) > 1 {
+		log.Info("Seleccionando tracker más cercano...")
+		client.SelectAndReorderTrackers(cfg)
+	}
+
 	store, mgr, useFinal := client.SetupStorage(cfg)
 
 	client.SetupPieceCompletionHandler(store, cfg, useFinal, completedChan, &completedMu, downloadCompleted)
@@ -100,7 +106,7 @@ func main() {
 
 	} else {
 		initialLeft := computeLeft()
-		trackerResponse, err = client.SendAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
+		trackerResponse, err = client.SendAnnounceWithFailover(cfg, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
 		if err != nil {
 			log.Error("Error en announce inicial: %v", err)
 			panic(err)
@@ -108,7 +114,7 @@ func main() {
 		log.Info("Tracker responde: %+v", trackerResponse)
 
 		// Hacer scrape para obtener estadísticas del torrent
-		client.SendScrape(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.InfoHash)
+		client.SendScrape(cfg.GetCurrentTrackerURL(), cfg.InfoHashEncoded, cfg.InfoHash)
 
 		// Extraer intervalo del tracker (por defecto 30 minutos)
 		if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
@@ -149,11 +155,8 @@ func main() {
 
 	// Enviar stopped (tracker o overlay según modo)
 	client.SendStoppedAnnounceOverlay(
-		cfg.AnnounceURL,
-		cfg.InfoHashEncoded,
-		cfg.PeerId,
+		cfg,
 		listenPort,
-		cfg.FileLength,
 		computeLeft,
 		hostnameFlag,
 		ov,
