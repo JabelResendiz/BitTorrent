@@ -1,0 +1,36 @@
+# Binarios
+bittorrent-api
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Output de cobertura
+*.out
+coverage.txt
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependencias (opcional, descomentar si no quieres commitear go.sum)
+# go.sum
+
+# Logs
+*.log
+
+# OS específico
+.DS_Store
+Thumbs.db
