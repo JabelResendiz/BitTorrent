@@ -16,7 +16,7 @@ docker network create net
 # ============================================
 
 # Tracker 1
-docker run -d \
+docker run \
   --name tracker1 \
   --hostname tracker1 \
   --network net \
@@ -26,7 +26,7 @@ docker run -d \
   -sync-peers "tracker2:9090,tracker3:9090"
 
 # Tracker 2
-docker run -d \
+docker run \
   --name tracker2 \
   --hostname tracker2 \
   --network net \
@@ -36,7 +36,7 @@ docker run -d \
   -sync-peers "tracker1:9090,tracker3:9090"
 
 # Tracker 3
-docker run -d \
+docker run \
   --name tracker3 \
   --hostname tracker3 \
   --network net \
