@@ -24,15 +24,17 @@ type ClientConfig struct {
 	PieceLength       int64
 	ExpectedHashes    [][20]byte
 	FileName          string
+	HTTPPort          int // Puerto para servidor HTTP interno
 }
 
-func ParseFlags() (string, string, string, string, string, int) {
+func ParseFlags() (string, string, string, string, string, int, int) {
 	torrentFlag := flag.String("torrent", "", "ruta al archivo .torrent (obligatorio)")
 	archivesFlag := flag.String("archives", "./archives", "directorio de archivos donde guardar/leer archivos")
 	hostnameFlag := flag.String("hostname", "", "nombre de host para announces (requerido en Docker/NAT)")
 	discoveryFlag := flag.String("discovery-mode", "tracker", "discovery mode: tracker|overlay")
 	bootstrapFlag := flag.String("bootstrap", "", "comma-separated bootstrap peers para overlay (host:port)")
 	overlayPortFlag := flag.Int("overlay-port", 6000, "puerto donde escucha el overlay (TCP)")
+	httpPortFlag := flag.Int("http-port", 9091, "puerto para servidor HTTP de métricas y control")
 
 	flag.Parse()
 
@@ -41,7 +43,7 @@ func ParseFlags() (string, string, string, string, string, int) {
 		os.Exit(2)
 	}
 
-	return *torrentFlag, *archivesFlag, *hostnameFlag, *discoveryFlag, *bootstrapFlag, *overlayPortFlag
+	return *torrentFlag, *archivesFlag, *hostnameFlag, *discoveryFlag, *bootstrapFlag, *overlayPortFlag, *httpPortFlag
 }
 
 func LoadTorrentMetadata(torrentPath, archivesPath string) *ClientConfig {

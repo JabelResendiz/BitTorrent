@@ -17,6 +17,7 @@ RUN go build -o /app/client ./client/cmd
 WORKDIR /app
 
 EXPOSE 6881
+EXPOSE 9091
 
 # Define el ENTRYPOINT para que los argumentos se pasen al binario
 ENTRYPOINT ["/app/client"]

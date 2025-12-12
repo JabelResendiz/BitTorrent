@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"src/client"
 	"src/overlay"
+	"src/peerwire"
 	"src/utils"
 	"strings"
 	"sync"
@@ -29,10 +30,11 @@ func main() {
 	)
 
 	var torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag string
-	var overlayPortFlag int
-	torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag, overlayPortFlag = client.ParseFlags()
+	var overlayPortFlag, httpPortFlag int
+	torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag, overlayPortFlag, httpPortFlag = client.ParseFlags()
 
 	cfg := client.LoadTorrentMetadata(torrentFlag, archivesFlag)
+	cfg.HTTPPort = httpPortFlag
 	// Abrir listener local (puerto asignado automáticamente)
 
 	ln, err := net.Listen("tcp", ":0")
@@ -60,6 +62,23 @@ func main() {
 	store, mgr, useFinal := client.SetupStorage(cfg)
 
 	client.SetupPieceCompletionHandler(store, cfg, useFinal, completedChan, &completedMu, downloadCompleted)
+
+	// Iniciar servidor HTTP para métricas y control
+	// Extraer nombre del archivo torrent
+	torrentName := torrentFlag
+	if idx := strings.LastIndex(torrentName, "/"); idx >= 0 {
+		torrentName = torrentName[idx+1:]
+	}
+	httpServer := client.NewHTTPServer(store, mgr, cfg.FileLength, torrentName, cfg.HTTPPort)
+	go func() {
+		log.Info("Iniciando servidor HTTP en puerto %d", cfg.HTTPPort)
+		if err := httpServer.Start(); err != nil {
+			log.Error("Error en servidor HTTP: %v", err)
+		}
+	}()
+
+	// Configurar la función IsPaused para el manager
+	peerwire.IsPaused = client.IsGlobalPaused
 
 	computeLeft := client.CreateComputeLeftFunc(store, cfg.FileLength)
 

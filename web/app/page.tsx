@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Upload, FolderOpen, Server } from 'lucide-react'
 import { AddTorrentForm } from '@/components/add-torrent-form'
 import { TorrentList } from '@/components/torrent-list'
@@ -8,6 +8,11 @@ import { StatsOverview } from '@/components/stats-overview'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'torrents' | 'add'>('torrents')
+  const [stats, setStats] = useState({
+    activeContainers: 0,
+    totalDownloadSpeed: 0,
+    averageProgress: 0,
+  })
 
   return (
     <div className="min-h-screen bg-background">
@@ -35,7 +40,11 @@ export default function Home() {
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         {/* Stats Overview */}
-        <StatsOverview />
+        <StatsOverview 
+          activeContainers={stats.activeContainers}
+          totalDownloadSpeed={stats.totalDownloadSpeed}
+          averageProgress={stats.averageProgress}
+        />
 
         {/* Tab Navigation */}
         <div className="mb-6 flex gap-2 border-b border-border">
@@ -65,8 +74,8 @@ export default function Home() {
 
         {/* Tab Content */}
         <div className="space-y-6">
-          {activeTab === 'add' && <AddTorrentForm />}
-          {activeTab === 'torrents' && <TorrentList />}
+          {activeTab === 'add' && <AddTorrentForm onSuccess={() => setActiveTab('torrents')} />}
+          {activeTab === 'torrents' && <TorrentList onStatsUpdate={setStats} />}
         </div>
       </main>
     </div>

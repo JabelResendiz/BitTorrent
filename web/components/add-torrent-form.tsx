@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Upload, FileText, FolderOpen, Container, Network, Hash, Users } from "lucide-react"
+import { Upload, FileText, FolderOpen, Container, Network, Hash, Users, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,54 +12,131 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 type DiscoveryMode = "tracker" | "overlay"
 
-export function AddTorrentForm() {
+const API_BASE_URL = 'http://localhost:7000/api'
+
+interface AddTorrentFormProps {
+  onSuccess?: () => void
+}
+
+export function AddTorrentForm({ onSuccess }: AddTorrentFormProps) {
   const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>("tracker")
   const [torrentFile, setTorrentFile] = useState<File | null>(null)
   const [containerName, setContainerName] = useState("")
   const [networkName, setNetworkName] = useState("net")
   const [folderPath, setFolderPath] = useState("")
   const [imageName, setImageName] = useState("client_img")
-
   const [port, setPort] = useState("6001")
   const [bootstrap, setBootstrap] = useState("")
+  const [loading, setLoading] = useState(false)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setTorrentFile(e.target.files[0])
+      const file = e.target.files[0]
+      setTorrentFile(file)
+      
+      // Extraer la carpeta del archivo seleccionado
+      // @ts-ignore - webkitRelativePath existe en algunos navegadores
+      const fullPath = file.webkitRelativePath || file.name
+      // Obtener directorio padre del archivo
+      const pathParts = fullPath.split('/')
+      if (pathParts.length > 1) {
+        // Si tiene ruta completa, usar todo menos el nombre del archivo
+        const folderPath = pathParts.slice(0, -1).join('/')
+        setFolderPath(folderPath)
+      } else {
+        // Si solo es el nombre del archivo, intentar obtener la ruta del path del archivo
+        // En el navegador esto es limitado por seguridad, así que dejamos vacío
+        setFolderPath('')
+      }
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    const torrentPath = `/app/src/archives/${torrentFile?.name || "ST.torrent"}`
-    const archives = "/app/src/archives"
-
-    let dockerCommand = `docker run -it --rm \\\n`
-    dockerCommand += `  --name ${containerName} \\\n`
-    dockerCommand += `  --network ${networkName} \\\n`
-    dockerCommand += `  -v ${folderPath}:${archives} \\\n`
-
-    if (discoveryMode === "overlay") {
-      dockerCommand += `  -p ${port}:${port} \\\n`
+    
+    if (!torrentFile) {
+      alert('Por favor selecciona un archivo .torrent')
+      return
     }
 
-    dockerCommand += `  ${imageName} \\\n`
-    dockerCommand += `  --torrent="${torrentPath}" \\\n`
-    dockerCommand += `  --archives="${archives}" \\\n`
-    dockerCommand += `  --hostname="${containerName}" \\\n`
-    dockerCommand += `  --discovery-mode=${discoveryMode}`
+    if (!containerName) {
+      alert('Por favor ingresa un nombre para el contenedor')
+      return
+    }
 
-    if (discoveryMode === "overlay") {
-      dockerCommand += ` \\\n  --overlay-port=${port}`
-      if (bootstrap) {
-        dockerCommand += ` \\\n  --bootstrap=${bootstrap}`
+    setLoading(true)
+
+    try {
+      // 1. Subir archivo .torrent
+      const formData = new FormData()
+      formData.append('file', torrentFile)
+
+      const uploadRes = await fetch(`${API_BASE_URL}/torrents/upload`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!uploadRes.ok) {
+        throw new Error('Failed to upload torrent file')
       }
-    }
 
-    console.log("[v0] Generated Docker command:\n", dockerCommand)
-    alert(`Docker command generated:\n\n${dockerCommand}`)
-    // Aquí iría la lógica para ejecutar el comando
+      const uploadData = await uploadRes.json()
+      console.log('Torrent uploaded:', uploadData)
+
+      // 2. Crear contenedor con parámetros según el modo
+      const createPayload: any = {
+        containerName: containerName,
+        networkName: networkName,
+        torrentFile: torrentFile.name,
+        imageName: imageName,
+        folderPath: folderPath,
+        discoveryMode: discoveryMode,
+      }
+
+      // Agregar parámetros específicos del modo overlay
+      if (discoveryMode === 'overlay') {
+        createPayload.port = port
+        if (bootstrap) {
+          createPayload.bootstrap = bootstrap
+        }
+      }
+
+      const createRes = await fetch(`${API_BASE_URL}/containers`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(createPayload),
+      })
+
+      if (!createRes.ok) {
+        throw new Error('Failed to create container')
+      }
+
+      const createData = await createRes.json()
+      console.log('Container created:', createData)
+
+      alert('✓ Contenedor creado exitosamente!')
+      
+      // Limpiar formulario
+      setTorrentFile(null)
+      setContainerName('')
+      setFolderPath('')
+      
+      // Reset file input
+      const fileInput = document.getElementById('torrent-file') as HTMLInputElement
+      if (fileInput) fileInput.value = ''
+
+      // Llamar callback de éxito para cambiar a la pestaña de torrents
+      if (onSuccess) {
+        onSuccess()
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error al crear el contenedor: ' + (error as Error).message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -73,12 +150,14 @@ export function AddTorrentForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Discovery Mode Selection */}
           <div className="space-y-3">
             <Label className="text-base font-semibold">Discovery Mode</Label>
             <RadioGroup
               value={discoveryMode}
               onValueChange={(value) => setDiscoveryMode(value as DiscoveryMode)}
               className="flex gap-4"
+              disabled={loading}
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="tracker" id="tracker" />
@@ -106,6 +185,7 @@ export function AddTorrentForm() {
               type="file"
               accept=".torrent"
               onChange={handleFileChange}
+              disabled={loading}
               className="cursor-pointer"
               required
             />
@@ -124,11 +204,13 @@ export function AddTorrentForm() {
               placeholder="e.g., client1"
               value={containerName}
               onChange={(e) => setContainerName(e.target.value)}
+              disabled={loading}
               required
             />
             <p className="text-sm text-muted-foreground">Used as both container name and hostname</p>
           </div>
 
+          {/* Network Name */}
           <div className="space-y-2">
             <Label htmlFor="network-name" className="flex items-center gap-2">
               <Network className="size-4" />
@@ -137,9 +219,10 @@ export function AddTorrentForm() {
             <Input
               id="network-name"
               type="text"
-              placeholder="net"
+              placeholder="overlay_network"
               value={networkName}
               onChange={(e) => setNetworkName(e.target.value)}
+              disabled={loading}
               required
             />
           </div>
@@ -156,11 +239,13 @@ export function AddTorrentForm() {
               placeholder="~/Desktop/peers/1"
               value={folderPath}
               onChange={(e) => setFolderPath(e.target.value)}
+              disabled={loading}
               required
             />
             <p className="text-sm text-muted-foreground">Local path to mount as /app/src/archives in container</p>
           </div>
 
+          {/* Docker Image Name */}
           <div className="space-y-2">
             <Label htmlFor="image-name" className="flex items-center gap-2">
               <Hash className="size-4" />
@@ -171,11 +256,13 @@ export function AddTorrentForm() {
               type="text"
               value={imageName}
               onChange={(e) => setImageName(e.target.value)}
+              disabled={loading}
               required
             />
           </div>
 
-          {discoveryMode === "overlay" && (
+          {/* Overlay Mode Specific Fields */}
+          {discoveryMode === 'overlay' && (
             <>
               <div className="space-y-2">
                 <Label htmlFor="port" className="flex items-center gap-2">
@@ -188,6 +275,7 @@ export function AddTorrentForm() {
                   placeholder="6001"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
+                  disabled={loading}
                   required
                 />
                 <p className="text-sm text-muted-foreground">Used for both port mapping and overlay-port parameter</p>
@@ -204,6 +292,7 @@ export function AddTorrentForm() {
                   placeholder="client1:6000"
                   value={bootstrap}
                   onChange={(e) => setBootstrap(e.target.value)}
+                  disabled={loading}
                 />
                 <p className="text-sm text-muted-foreground">Bootstrap client for gossip discovery (optional)</p>
               </div>
@@ -211,9 +300,18 @@ export function AddTorrentForm() {
           )}
 
           {/* Submit Button */}
-          <Button type="submit" className="w-full" size="lg">
-            <Upload className="mr-2 size-4" />
-            Generate Docker Command
+          <Button type="submit" className="w-full" size="lg" disabled={loading}>
+            {loading ? (
+              <>
+                <RefreshCw className="mr-2 size-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 size-4" />
+                Create Container
+              </>
+            )}
           </Button>
         </form>
       </CardContent>

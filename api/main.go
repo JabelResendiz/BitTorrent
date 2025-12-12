@@ -45,6 +45,9 @@ func main() {
 		api.DELETE("/containers/:id", handlers.DeleteContainer)
 		api.GET("/containers/:id/logs", handlers.GetLogs)
 		api.GET("/containers/:id/stats", handlers.GetStats)
+		api.GET("/containers/:id/status", handlers.GetContainerStatus)
+		api.POST("/containers/:id/pause", handlers.PauseContainer)
+		api.POST("/containers/:id/resume", handlers.ResumeContainer)
 
 		// Torrents endpoints
 		api.GET("/torrents", handlers.ListTorrents)

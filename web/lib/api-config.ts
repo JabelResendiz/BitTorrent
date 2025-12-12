@@ -7,10 +7,10 @@
 
 export const API_CONFIG = {
   // URL base del API (cambiar si el backend usa otro puerto)
-  BASE_URL: 'http://localhost:8090',
+  BASE_URL: 'http://localhost:7000',
   
   // WebSocket URL
-  WS_URL: 'ws://localhost:8090',
+  WS_URL: 'ws://localhost:7000',
   
   // Endpoints
   ENDPOINTS: {
