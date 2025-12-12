@@ -20,5 +20,5 @@ echo "✅ Docker is running"
 mkdir -p ../archives/torrents
 echo "✅ Torrents directory ready"
 
-# Iniciar el servidor
-go run main.go
+# Iniciar el servidor (incluir todos los archivos .go)
+go run *.go
