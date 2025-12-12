@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -120,20 +122,42 @@ func CreateContainer(c *gin.Context) {
 		}
 	}
 
+	// Agregar puerto HTTP para el servidor de métricas
+	cmd = append(cmd, "--http-port=9091")
+
+	// Expandir tilde (~) a ruta absoluta del home
+	folderPath := req.FolderPath
+	if strings.HasPrefix(folderPath, "~/") {
+		homeDir := "/home/" + os.Getenv("USER")
+		if homeDir == "/home/" {
+			homeDir = os.Getenv("HOME")
+		}
+		folderPath = strings.Replace(folderPath, "~", homeDir, 1)
+	}
+
 	// Construir binds para volúmenes
 	torrentsPath, _ := filepath.Abs("../archives/torrents")
 	binds := []string{
-		req.FolderPath + ":/data",
+		folderPath + ":/data",
 		torrentsPath + ":/torrents:ro",
+	}
+
+	// Mapeo de puertos (exponer puerto HTTP 9091)
+	portBindings := map[string]string{
+		"9091": "0", // Docker asignará un puerto aleatorio del host
+	}
+	if req.DiscoveryMode == "overlay" && req.Port != "" {
+		portBindings[req.Port] = req.Port
 	}
 
 	// Configuración del contenedor
 	config := docker.CreateContainerConfig{
-		Name:        req.ContainerName,
-		Image:       req.ImageName,
-		NetworkName: req.NetworkName,
-		Binds:       binds,
-		Cmd:         cmd,
+		Name:         req.ContainerName,
+		Image:        req.ImageName,
+		NetworkName:  req.NetworkName,
+		Binds:        binds,
+		Cmd:          cmd,
+		PortBindings: portBindings,
 	}
 
 	// Crear contenedor
@@ -285,6 +309,126 @@ func GetStats(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// GetContainerStatus obtiene el status completo del contenedor desde su HTTP server interno
+// GET /api/containers/:id/status
+func GetContainerStatus(c *gin.Context) {
+	containerID := c.Param("id")
+
+	// Obtener info del contenedor
+	container, err := dockerClient.GetContainer(containerID)
+	if err != nil {
+		log.Printf("❌ Error getting container %s: %v", containerID, err)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Container not found",
+		})
+		return
+	}
+
+	// Obtener puerto HTTP del contenedor (puerto 9091 mapeado)
+	ports := container.NetworkSettings.Ports["9091/tcp"]
+	if len(ports) == 0 {
+		log.Printf("⚠️ Container %s does not expose HTTP port 9091", containerID)
+		c.JSON(http.StatusOK, gin.H{
+			"error":            "HTTP port not exposed",
+			"progress_percent": 0,
+			"state":            "unknown",
+		})
+		return
+	}
+
+	httpPort := ports[0].HostPort
+
+	// Hacer request al HTTP server del contenedor
+	url := fmt.Sprintf("http://localhost:%s/status", httpPort)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("⚠️ Failed to connect to container HTTP server: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"error":            "Container HTTP server not responding",
+			"progress_percent": 0,
+			"state":            "starting",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Parsear respuesta
+	var status map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		log.Printf("❌ Error parsing status response: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to parse status",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// PauseContainer pausa la descarga del contenedor
+// POST /api/containers/:id/pause
+func PauseContainer(c *gin.Context) {
+	containerID := c.Param("id")
+
+	container, err := dockerClient.GetContainer(containerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Container not found"})
+		return
+	}
+
+	ports := container.NetworkSettings.Ports["9091/tcp"]
+	if len(ports) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTTP port not exposed"})
+		return
+	}
+
+	httpPort := ports[0].HostPort
+	url := fmt.Sprintf("http://localhost:%s/pause", httpPort)
+
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		log.Printf("❌ Error pausing container: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pause"})
+		return
+	}
+	defer resp.Body.Close()
+
+	log.Printf("⏸️  Container paused: %s", containerID)
+	c.JSON(http.StatusOK, gin.H{"success": true, "paused": true})
+}
+
+// ResumeContainer reanuda la descarga del contenedor
+// POST /api/containers/:id/resume
+func ResumeContainer(c *gin.Context) {
+	containerID := c.Param("id")
+
+	container, err := dockerClient.GetContainer(containerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Container not found"})
+		return
+	}
+
+	ports := container.NetworkSettings.Ports["9091/tcp"]
+	if len(ports) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTTP port not exposed"})
+		return
+	}
+
+	httpPort := ports[0].HostPort
+	url := fmt.Sprintf("http://localhost:%s/resume", httpPort)
+
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		log.Printf("❌ Error resuming container: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resume"})
+		return
+	}
+	defer resp.Body.Close()
+
+	log.Printf("▶️  Container resumed: %s", containerID)
+	c.JSON(http.StatusOK, gin.H{"success": true, "paused": false})
 }
 
 // ListNetworks lista todas las redes Docker

@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 // DockerClient envuelve el cliente de Docker SDK
@@ -32,13 +33,18 @@ func NewDockerClient() (*DockerClient, error) {
 	return &DockerClient{cli: cli}, nil
 }
 
-// ListContainers devuelve todos los contenedores (running y stopped)
+// ListContainers devuelve solo los contenedores de client_img
 func (dc *DockerClient) ListContainers() ([]types.Container, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Filtrar solo contenedores de la imagen client_img
+	filterArgs := filters.NewArgs()
+	filterArgs.Add("ancestor", "client_img")
+
 	return dc.cli.ContainerList(ctx, types.ContainerListOptions{
-		All: true, // Incluir contenedores detenidos
+		All:     true, // Incluir contenedores detenidos
+		Filters: filterArgs,
 	})
 }
 
@@ -66,18 +72,32 @@ func (dc *DockerClient) CreateContainer(config CreateContainerConfig) (string, e
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Construir port bindings
+	portBindings := nat.PortMap{}
+	exposedPorts := nat.PortSet{}
+
+	for containerPort, hostPort := range config.PortBindings {
+		port, _ := nat.NewPort("tcp", containerPort)
+		exposedPorts[port] = struct{}{}
+		portBindings[port] = []nat.PortBinding{
+			{HostPort: hostPort},
+		}
+	}
+
 	// Configuración del contenedor
 	containerConfig := &container.Config{
-		Image: config.Image,
-		Cmd:   config.Cmd,
-		Env:   config.Env,
-		Tty:   true,
+		Image:        config.Image,
+		Cmd:          config.Cmd,
+		Env:          config.Env,
+		Tty:          true,
+		ExposedPorts: exposedPorts,
 	}
 
 	// Configuración del host
 	hostConfig := &container.HostConfig{
-		Binds:       config.Binds,
-		NetworkMode: container.NetworkMode(config.NetworkName),
+		Binds:        config.Binds,
+		NetworkMode:  container.NetworkMode(config.NetworkName),
+		PortBindings: portBindings,
 	}
 
 	// Configuración de red

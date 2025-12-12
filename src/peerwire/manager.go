@@ -59,6 +59,9 @@ func (p *PeerConn) ReadLoop() {
 	}
 }
 
+// IsPaused es una función que se puede definir externamente
+var IsPaused func() bool = func() bool { return false }
+
 // actualiza estado segun el tipo de mensaje
 func (p *PeerConn) handleMessage(id byte, payload []byte) {
 	switch id {
@@ -73,7 +76,7 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 		p.PeerChoking = false
 		fmt.Println("Peer te unchokeo. Buscando pieza a solicitar...")
 		if p.manager != nil && p.manager.Store() != nil {
-			if !p.downloading {
+			if !p.downloading && !IsPaused() {
 				picker := NewPiecePicker()
 				piece := picker.NextPieceFor(p, p.manager.Store())
 				if piece >= 0 {
@@ -179,16 +182,21 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 
 			// Si la pieza está verificada y completa, buscar siguiente pieza
 			if p.manager.Store().HasPiece(int(index)) {
-				picker := NewPiecePicker()
-				nxt := picker.NextPieceFor(p, p.manager.Store())
-				if nxt >= 0 {
-					p.curPiece = nxt
-					p.curOffset = 0
-					p.downloading = false
-					p.manager.DownloadPieceParallel(nxt)
+				if !IsPaused() {
+					picker := NewPiecePicker()
+					nxt := picker.NextPieceFor(p, p.manager.Store())
+					if nxt >= 0 {
+						p.curPiece = nxt
+						p.curOffset = 0
+						p.downloading = false
+						p.manager.DownloadPieceParallel(nxt)
+					} else {
+						p.downloading = false
+						fmt.Println("Descarga completada, no hay más piezas")
+					}
 				} else {
 					p.downloading = false
-					fmt.Println("Descarga completada, no hay más piezas")
+					fmt.Println("Cliente pausado, no se solicitan más piezas")
 				}
 			}
 		}

@@ -42,11 +42,18 @@ archives
 .env.local
 
 # Go build output
-
+*_binary
+client_binary
+api_server
 src/client/cmd/main
 src/client/cmd/client
-
 src/main
+
+# Backup files
+*.backup
+
+# Nohup logs
+nohup.out
 
 # report
 report/informe.aux
