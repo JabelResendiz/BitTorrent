@@ -1,19 +1,22 @@
 FROM golang:1.22-alpine
 
-WORKDIR /app
+WORKDIR /app/src
 
-# Copia go.mod y go.sum desde la raíz del proyecto
-COPY go.mod ./
+# Copia go.mod desde src/
+COPY src/go.mod ./
 
 # Descarga dependencias
-RUN go mod tidy
+RUN go mod download
 
-# Copia todo el código
-COPY . .
+# Copia todo el código fuente
+COPY src/ ./
 
-# Compila solo el tracker
-RUN go build -o tracker2 ./tracker/cmd
+# Compila el tracker
+RUN go build -o /app/tracker ./tracker/cmd
 
-EXPOSE 2377
+WORKDIR /app
 
-CMD ["./tracker2"]
+EXPOSE 8080 9090
+
+# Usar ENTRYPOINT para que los argumentos CLI se pasen al binario
+ENTRYPOINT ["/app/tracker"]
