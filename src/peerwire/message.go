@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"time"
 )
 
 const (
@@ -37,8 +38,39 @@ func (p *PeerConn) SendMessage(id byte, payload []byte) error {
 	return err
 }
 
-// funcion para leer mesnaje del peer
+// funcion para leer mensaje del peer con reintentos y timeouts progresivos
 func (p *PeerConn) ReadMessage() (id byte, payload []byte, err error) {
+	// Reintentos con timeouts progresivos: 1s, 2s, 4s
+	timeouts := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+
+	for attempt := 0; attempt < len(timeouts); attempt++ {
+		if attempt > 0 {
+			fmt.Printf("Reintento %d/%d para leer mensaje del peer (timeout: %v)\n", attempt+1, len(timeouts), timeouts[attempt])
+		}
+
+		id, payload, err = p.readMessageWithTimeout(timeouts[attempt])
+		if err == nil {
+			return id, payload, nil
+		}
+
+		// Si es el último intento, devolver el error
+		if attempt == len(timeouts)-1 {
+			return 0, nil, fmt.Errorf("fallo después de %d intentos: %w", len(timeouts), err)
+		}
+	}
+
+	return 0, nil, err
+}
+
+// readMessageWithTimeout lee un mensaje con un timeout específico
+func (p *PeerConn) readMessageWithTimeout(timeout time.Duration) (id byte, payload []byte, err error) {
+	// Establecer deadline para la lectura
+	if err := p.Conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return 0, nil, err
+	}
+	// Resetear deadline después de leer
+	defer p.Conn.SetReadDeadline(time.Time{})
+
 	var length uint32
 	if err := binary.Read(p.Conn, binary.BigEndian, &length); err != nil {
 		return 0, nil, err
