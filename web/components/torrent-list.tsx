@@ -167,17 +167,17 @@ export function TorrentList({ onStatsUpdate }: TorrentListProps) {
     }
   }
 
-  // Detener y eliminar contenedor
-  const handleDelete = async (containerId: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este contenedor?')) return
+  // Detener contenedor (envía SIGINT, equivalente a Ctrl+C)
+  const handleStop = async (containerId: string) => {
+    if (!confirm('¿Estás seguro de que quieres detener este contenedor?')) return
 
     try {
-      await fetch(`${API_BASE_URL}/containers/${containerId}?force=true`, {
-        method: 'DELETE',
+      await fetch(`${API_BASE_URL}/containers/${containerId}/stop`, {
+        method: 'POST',
       })
       fetchTorrents() // Refrescar datos
     } catch (error) {
-      console.error('Error deleting container:', error)
+      console.error('Error stopping container:', error)
     }
   }
 
@@ -270,7 +270,7 @@ export function TorrentList({ onStatsUpdate }: TorrentListProps) {
                 <Button 
                   variant="ghost" 
                   size="icon"
-                  onClick={() => handleDelete(torrent.id)}
+                  onClick={() => handleStop(torrent.id)}
                 >
                   <Trash2 className="size-4" />
                 </Button>
