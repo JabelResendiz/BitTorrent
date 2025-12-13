@@ -98,6 +98,7 @@ func (dc *DockerClient) CreateContainer(config CreateContainerConfig) (string, e
 		Binds:        config.Binds,
 		NetworkMode:  container.NetworkMode(config.NetworkName),
 		PortBindings: portBindings,
+		AutoRemove:   true, // Equivalente a --rm: elimina el contenedor automáticamente al detenerse
 	}
 
 	// Configuración de red
@@ -131,12 +132,13 @@ func (dc *DockerClient) StartContainer(containerID string) error {
 	return dc.cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
 }
 
-// StopContainer detiene un contenedor
+// StopContainer detiene un contenedor enviando SIGINT (Ctrl+C)
 func (dc *DockerClient) StopContainer(containerID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	timeout := 10
+	// Timeout de 30 segundos para que el cliente tenga tiempo de enviar announce stopped
+	timeout := 30
 	return dc.cli.ContainerStop(ctx, containerID, container.StopOptions{
 		Timeout: &timeout,
 	})
