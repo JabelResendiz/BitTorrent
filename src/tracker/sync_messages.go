@@ -9,6 +9,7 @@ type SyncMessage struct {
 	FromNodeID string                      `json:"from_node_id"` // ID del tracker emisor
 	Timestamp  HLC                         `json:"timestamp"`    // HLC del mensaje
 	Swarms     map[string]map[string]*Peer `json:"swarms"`       // infoHash -> peerID -> Peer
+	Signature  string                      `json:"signature"`    // Firma HMAC-SHA256 del mensaje
 }
 
 // NewSyncMessage crea un nuevo mensaje de sincronización con el estado actual del tracker.
