@@ -87,8 +87,28 @@ func (sm *SyncManager) pushToAllPeers() {
 		return
 	}
 
-	log.Printf("[SYNC] Pushing state to %d peers (swarms=%d, signature=%s...)",
-		len(sm.remotePeers), len(msg.Swarms), signature[:16])
+	// Crear resumen de datos a enviar
+	swarmSummary := ""
+	for infoHash, peers := range msg.Swarms {
+		activePeers := 0
+		for _, peer := range peers {
+			if !peer.Deleted {
+				activePeers++
+			}
+		}
+		if activePeers > 0 {
+			if swarmSummary != "" {
+				swarmSummary += ", "
+			}
+			swarmSummary += fmt.Sprintf("%s:%d", infoHash[:8], activePeers)
+		}
+	}
+	if swarmSummary == "" {
+		swarmSummary = "empty"
+	}
+
+	log.Printf("[SYNC] Pushing to %d peers | Swarms[%s] | sig=%s...",
+		len(sm.remotePeers), swarmSummary, signature[:12])
 
 	// Enviar el mismo mensaje firmado a todos los peers
 	for _, remotePeer := range sm.remotePeers {

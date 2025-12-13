@@ -45,7 +45,11 @@ func (t *Tracker) mergePeer(infoHash string, localSwarm *Swarm, peerID string, r
 			HostName:  remotePeer.HostName,
 			Deleted:   remotePeer.Deleted,
 		}
-		log.Printf("[SYNC] Added new peer %s to swarm %s (deleted=%v)", peerID, infoHash[:8], remotePeer.Deleted)
+		peerLabel := remotePeer.HostName
+		if peerLabel == "" {
+			peerLabel = peerID[:8] + "..."
+		}
+		log.Printf("[SYNC] Added peer %s to swarm %s (deleted=%v)", peerLabel, infoHash[:8], remotePeer.Deleted)
 		return
 	}
 
@@ -62,7 +66,11 @@ func (t *Tracker) mergePeer(infoHash string, localSwarm *Swarm, peerID string, r
 			localPeer.LastSeen = remotePeer.LastSeen
 			localPeer.Completed = remotePeer.Completed
 			localPeer.HostName = remotePeer.HostName
-			log.Printf("[SYNC] Resurrected peer %s in swarm %s", peerID, infoHash[:8])
+			peerLabel := remotePeer.HostName
+			if peerLabel == "" {
+				peerLabel = peerID[:8] + "..."
+			}
+			log.Printf("[SYNC] Resurrected peer %s in swarm %s", peerLabel, infoHash[:8])
 			return
 		}
 
@@ -74,14 +82,22 @@ func (t *Tracker) mergePeer(infoHash string, localSwarm *Swarm, peerID string, r
 		localPeer.HostName = remotePeer.HostName
 		localPeer.Deleted = remotePeer.Deleted
 
+		peerLabel := remotePeer.HostName
+		if peerLabel == "" {
+			peerLabel = peerID[:8] + "..."
+		}
 		if remotePeer.Deleted {
-			log.Printf("[SYNC] Updated peer %s in swarm %s to tombstone", peerID, infoHash[:8])
+			log.Printf("[SYNC] Updated peer %s in swarm %s to tombstone", peerLabel, infoHash[:8])
 		} else {
-			log.Printf("[SYNC] Updated peer %s in swarm %s", peerID, infoHash[:8])
+			log.Printf("[SYNC] Updated peer %s in swarm %s", peerLabel, infoHash[:8])
 		}
 		return
 	}
 
 	// Caso 3: El peer local es más reciente o igual -> ignorar el remoto
-	log.Printf("[SYNC] Ignored older update for peer %s in swarm %s", peerID, infoHash[:8])
+	peerLabel := remotePeer.HostName
+	if peerLabel == "" {
+		peerLabel = peerID[:8] + "..."
+	}
+	log.Printf("[SYNC] Ignored older update for peer %s in swarm %s", peerLabel, infoHash[:8])
 }
