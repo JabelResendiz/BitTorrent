@@ -68,24 +68,42 @@ func (sm *SyncManager) Stop() {
 func (sm *SyncManager) pushToAllPeers() {
 	msg := sm.tracker.NewSyncMessage()
 
-	log.Printf("[SYNC] Pushing state to %d peers (swarms=%d)", len(sm.remotePeers), len(msg.Swarms))
-
-	for _, remotePeer := range sm.remotePeers {
-		go sm.pushToPeer(remotePeer, msg)
-	}
-}
-
-// pushToPeer envía un mensaje de sincronización a un peer específico.
-func (sm *SyncManager) pushToPeer(remotePeer string, msg *SyncMessage) {
-	url := fmt.Sprintf("http://%s/sync", remotePeer)
-
-	data, err := json.Marshal(msg)
+	// Calcular firma UNA SOLA VEZ antes de enviar a múltiples peers
+	// Esto evita race conditions cuando múltiples goroutines modifican msg.Signature
+	msg.Signature = ""
+	msgBytes, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("[SYNC] Error marshaling sync message for %s: %v", remotePeer, err)
+		log.Printf("[SYNC] Error marshaling message for signing: %v", err)
 		return
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
+	signature := SignMessage(msgBytes)
+	msg.Signature = signature
+
+	// Serializar mensaje completo con firma (una sola vez)
+	signedMsgBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("[SYNC] Error marshaling signed message: %v", err)
+		return
+	}
+
+	log.Printf("[SYNC] Pushing state to %d peers (swarms=%d, signature=%s...)",
+		len(sm.remotePeers), len(msg.Swarms), signature[:16])
+
+	// Enviar el mismo mensaje firmado a todos los peers
+	for _, remotePeer := range sm.remotePeers {
+		go sm.pushToPeer(remotePeer, signedMsgBytes, signature[:16])
+	}
+}
+
+// pushToPeer envía un mensaje de sincronización pre-firmado a un peer específico.
+// Recibe los bytes ya serializados y firmados para evitar race conditions.
+func (sm *SyncManager) pushToPeer(remotePeer string, signedMsgBytes []byte, signaturePreview string) {
+	url := fmt.Sprintf("http://%s/sync", remotePeer)
+
+	log.Printf("[SYNC] Sending signed message to %s (signature: %s...)", remotePeer, signaturePreview)
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(signedMsgBytes))
 	if err != nil {
 		log.Printf("[SYNC] Error pushing to %s: %v", remotePeer, err)
 		return
@@ -165,7 +183,33 @@ func (sl *SyncListener) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[SYNC] Received sync from node %s with %d swarms", msg.FromNodeID, len(msg.Swarms))
+	// VALIDACIÓN DE SEGURIDAD: Verificar firma HMAC
+	receivedSignature := msg.Signature
+
+	if receivedSignature == "" {
+		log.Printf("[SECURITY] ❌ Rejected sync from %s: missing signature", msg.FromNodeID)
+		http.Error(w, "Unauthorized: missing signature", http.StatusUnauthorized)
+		return
+	}
+
+	// Reconstruir mensaje sin firma para validar
+	msg.Signature = ""
+	messageBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("[SYNC] Error marshaling message for validation: %v", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Validar firma
+	if !ValidateSignature(messageBytes, receivedSignature) {
+		log.Printf("[SECURITY] ❌ Rejected sync from %s: invalid signature (potential attack)", msg.FromNodeID)
+		log.Printf("[SECURITY] Remote IP: %s", r.RemoteAddr)
+		http.Error(w, "Unauthorized: invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	log.Printf("[SYNC] ✅ Valid signature from %s with %d swarms", msg.FromNodeID, len(msg.Swarms))
 
 	// Hacer merge del estado recibido
 	sl.tracker.MergeSwarms(&msg)

@@ -70,6 +70,9 @@ func main() {
 	if len(remotePeers) > 0 {
 		log.Printf("Starting distributed sync with %d peers", len(remotePeers))
 
+		// Log de estado de seguridad
+		tracker.LogSecurityStatus()
+
 		// Iniciar listener de sincronización
 		if err := t.StartSyncListener(*syncListen); err != nil {
 			log.Fatalf("failed to start sync listener: %v", err)
