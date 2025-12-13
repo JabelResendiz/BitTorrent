@@ -79,3 +79,6 @@ lerna-debug.log*
 .pnpm-store/
 *.tsbuildinfo
 next-env.d.ts
+
+# Api
+api/api
