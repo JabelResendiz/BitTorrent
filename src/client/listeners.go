@@ -53,6 +53,7 @@ func handleIncomingPeerConnection(conn net.Conn, infoHash [20]byte, peerId strin
 
 	if err := pc.SendHandshakeOnly(); err != nil {
 		fmt.Println("Error enviando handshake de respuesta:", err)
+		conn.Close()
 		return
 	}
 
