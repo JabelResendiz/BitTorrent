@@ -19,7 +19,7 @@ echo "📦 Construyendo y levantando contenedores..."
 echo ""
 
 # Construir y levantar con Docker Compose
-docker-compose up -d --build
+docker compose up -d --build
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -30,10 +30,10 @@ if [ $? -eq 0 ]; then
     echo "🌐 Frontend: http://localhost:3000"
     echo "🌐 Backend:  http://localhost:7000"
     echo ""
-    docker-compose ps
+    docker compose ps
     echo ""
-    echo "📝 Ver logs: docker-compose logs -f"
-    echo "🛑 Detener:  docker-compose down"
+    echo "📝 Ver logs: docker compose logs -f"
+    echo "🛑 Detener:  docker compose down"
     echo ""
 else
     echo ""
