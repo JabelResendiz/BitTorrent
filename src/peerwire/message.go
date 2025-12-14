@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"time"
 )
 
 const (
@@ -38,15 +37,8 @@ func (p *PeerConn) SendMessage(id byte, payload []byte) error {
 	return err
 }
 
-// funcion para leer mensaje del peer con timeout de 30 segundos
+// funcion para leer mensaje del peer
 func (p *PeerConn) ReadMessage() (id byte, payload []byte, err error) {
-	// Establecer deadline de 30 segundos para la lectura
-	if err := p.Conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		return 0, nil, err
-	}
-	// Resetear deadline después de leer
-	defer p.Conn.SetReadDeadline(time.Time{})
-
 	var length uint32
 	if err := binary.Read(p.Conn, binary.BigEndian, &length); err != nil {
 		return 0, nil, err
