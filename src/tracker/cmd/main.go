@@ -22,7 +22,7 @@ func main() {
 	// -sync-peers: lista de direcciones de otros trackers (separados por coma)
 	// -sync-interval: intervalo de sincronización en segundos
 	listen := flag.String("listen", ":8080", "address to listen, e.g. :8080")
-	interval := flag.Int("interval", 1800, "announce interval in seconds")
+	interval := flag.Int("interval", 60, "announce interval in seconds")
 	maxPeers := flag.Int("maxpeers", 50, "max peers per response")
 	syncListen := flag.String("sync-listen", ":9090", "address to listen for sync messages, e.g. :9090")
 	syncPeersStr := flag.String("sync-peers", "", "comma-separated list of remote tracker addresses for sync, e.g. tracker2:9090,tracker3:9090")
@@ -48,7 +48,7 @@ func main() {
 		}
 	}
 
-	// Construye el tracker con Interval y PeerTimeout (2×interval por defecto),
+	// Construye el tracker con Interval y PeerTimeout (2×interval = 2 minutos),
 	// límite de peers por respuesta, ruta para persistencia, node-id y peers remotos.
 	t := tracker.New(
 		time.Duration(*interval)*time.Second,

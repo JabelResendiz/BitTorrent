@@ -85,7 +85,7 @@ func main() {
 	// Enviar announce inicial con event=started
 	initialLeft := computeLeft()
 	var trackerResponse map[string]interface{}
-	trackerInterval := 1800 * time.Second
+	trackerInterval := 60 * time.Second
 
 	if hostnameFlag == "" {
 		hostnameFlag = "127.0.0.1"
