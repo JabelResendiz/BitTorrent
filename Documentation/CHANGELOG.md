@@ -1,4 +1,62 @@
-# Changelog - Implementación Round-Robin
+# Changelog - Sistema BitTorrent
+
+## [v2.2.0] - 2025-12-08 - Sistema Dual Tracker/Overlay
+
+### 🎯 Funcionalidad Dual: Soporte Completo para Tracker y Overlay
+
+Se ha implementado soporte completo para **dos modos de descubrimiento** en el cliente BitTorrent, permitiendo elegir entre arquitectura centralizada (Tracker) y distribuida (Overlay/Gossip).
+
+#### ✨ Nuevas Características
+
+**Sistema Dual de Descubrimiento:**
+- ✅ **Modo TRACKER (Centralizado)**: Comunicación HTTP con tracker centralizado para descubrimiento de peers
+- ✅ **Modo OVERLAY (Distribuido)**: Red P2P con gossip protocol para descubrimiento descentralizado
+- ✅ Selección mediante flag `--discovery-mode=tracker|overlay` (default: tracker)
+
+**Logging Mejorado:**
+- ✅ Indicador claro del modo activo al iniciar el cliente
+- ✅ Mensajes diferenciados para eventos según el modo: `(tracker)` vs `(overlay)`
+- ✅ Mensajes específicos en announces periódicos, completed y stopped
+
+#### 🔧 Cambios Técnicos
+
+**Archivos Modificados:**
+- `src/client/cmd/main.go`: Logging del modo activo, eliminación de código comentado
+- `src/client/event.go`: Mejoras en logging de announces periódicos y completion
+- `src/client/storage.go`: Logging diferenciado en shutdown por modo
+
+**Nuevos Archivos:**
+- `scripts/run_tracker_mode.sh`: Script de ayuda para modo tracker
+- `Documentation/GUIA_DOS_MODOS.md`: Documentación completa de ambos modos
+
+#### 📊 Comparativa
+
+| Característica | TRACKER | OVERLAY |
+|----------------|---------|---------|
+| Arquitectura | Centralizada | Distribuida |
+| Protocolo | HTTP/1.1 | TCP JSON |
+| SPOF | ✅ Sí | ❌ No |
+| Escalabilidad | Media | Alta |
+
+#### 🚀 Uso
+
+**Modo Tracker (default):**
+```bash
+go run client/cmd/main.go --torrent=video.torrent --archives=./data
+```
+
+**Modo Overlay:**
+```bash
+go run client/cmd/main.go --torrent=video.torrent --archives=./data \
+  --discovery-mode=overlay --bootstrap=peer1:6000
+```
+
+#### 📚 Documentación
+
+- Ver `Documentation/GUIA_DOS_MODOS.md` para guía completa
+- Ver `scripts/run_tracker_mode.sh` para ejemplos de uso
+
+---
 
 ## [v2.1.0] - 2025-10-26
 

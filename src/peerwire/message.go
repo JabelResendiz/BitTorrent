@@ -37,7 +37,7 @@ func (p *PeerConn) SendMessage(id byte, payload []byte) error {
 	return err
 }
 
-// funcion para leer mesnaje del peer
+// funcion para leer mensaje del peer
 func (p *PeerConn) ReadMessage() (id byte, payload []byte, err error) {
 	var length uint32
 	if err := binary.Read(p.Conn, binary.BigEndian, &length); err != nil {

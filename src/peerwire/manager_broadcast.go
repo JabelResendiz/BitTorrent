@@ -93,6 +93,13 @@ func (m *Manager) BroadcastHave(index int) {
 
 func (m *Manager) Store() PieceStore { return m.store }
 
+// GetPeerCount retorna el número de peers conectados
+func (m *Manager) GetPeerCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.peers)
+}
+
 // HasPeerAddr returns true if there is already a peer with the given remote address (ip:port)
 func (m *Manager) HasPeerAddr(addr string) bool {
 	m.mu.RLock()

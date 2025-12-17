@@ -42,11 +42,18 @@ archives
 .env.local
 
 # Go build output
-
+*_binary
+client_binary
+api_server
 src/client/cmd/main
 src/client/cmd/client
-
 src/main
+
+# Backup files
+*.backup
+
+# Nohup logs
+nohup.out
 
 # report
 report/informe.aux
@@ -56,3 +63,22 @@ report/informe.toc
 report/informe.synctex.gz
 report/informe.fls
 report/informe.fdb_latexmk
+
+# Frontend / Next.js
+node_modules/
+.next/
+out/
+.vercel
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.env*.local
+.pnpm-store/
+*.tsbuildinfo
+next-env.d.ts
+
+# Api
+api/api

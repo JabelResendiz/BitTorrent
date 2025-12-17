@@ -9,10 +9,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"src/bencode"
 	"strconv"
 	"strings"
-	"time"
-	"src/bencode"
 )
 
 // AnnounceHandler handles GET /announce minimal params: info_hash, peer_id, port
@@ -70,7 +69,6 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 
 	infoHex, _ := Bytes20ToHex(infoHash)
 	peerHex, _ := Bytes20ToHex(peerID)
-	now := time.Now()
 
 	log.Printf("announce from %s ih=%s pid=%s port=%d", hostname, infoHex[:8], peerHex[:8], port64)
 
@@ -85,16 +83,16 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 
 	case "started":
 		log.Printf("event=started from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
-		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed, now) })
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed) })
 
 	case "completed":
 		log.Printf("event=completed from %s (ih=%s pid=%s) - peer is now seeder!", hostname, infoHex[:8], peerHex[:8])
-		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), true, now) })
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), true) })
 
 	default:
 		// Announce regular sin evento (periódico)
 		log.Printf("periodic announce from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
-		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed, now) })
+		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed) })
 	}
 
 	// Build peer list excluding requester
