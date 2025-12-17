@@ -150,7 +150,7 @@ func main() {
 	client.StartListeningForIncomingPeers(ln, cfg.InfoHash, cfg.PeerId, store, mgr)
 
 	// Goroutine: Announces periódicos (tracker o overlay según modo)
-	client.StartPeriodicAnnounceRoutineOverlay(cfg, listenPort, hostnameFlag, computeLeft, shutdownChan, trackerInterval, ov, providerAddr)
+	client.StartPeriodicAnnounceRoutineOverlay(cfg, listenPort, hostnameFlag, computeLeft, shutdownChan, trackerInterval, ov, providerAddr, cfg.InfoHash, cfg.PeerId, store, mgr)
 
 	// Goroutine: Detectar completación y enviar event=completed
 	client.StartCompletionAnnounceRoutineOverlay(completedChan, cfg, listenPort, hostnameFlag, ov, providerAddr)

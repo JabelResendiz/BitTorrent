@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"src/overlay"
+	"src/peerwire"
 	"time"
 )
 
@@ -80,6 +81,10 @@ func StartPeriodicAnnounceRoutine(
 	computeLeft func() int64,
 	shutdownChan <-chan struct{},
 	trackerInterval time.Duration,
+	infoHash [20]byte,
+	peerId string,
+	store interface{},
+	mgr interface{},
 ) {
 	go func() {
 		ticker := time.NewTicker(trackerInterval)
@@ -90,7 +95,7 @@ func StartPeriodicAnnounceRoutine(
 			case <-ticker.C:
 				left := computeLeft()
 
-				_, err := SendAnnounceWithFailover(
+				trackerResponse, err := SendAnnounceWithFailover(
 					cfg,
 					listenPort,
 					0,    // uploaded
@@ -104,6 +109,17 @@ func StartPeriodicAnnounceRoutine(
 					fmt.Println("[ERROR] Announce periódico fallido:", err)
 				} else {
 					fmt.Println("[INFO] Announce periódico enviado")
+
+					// Procesar nuevos peers de la respuesta
+					peerInfo := ParsePeersFromOthers(trackerResponse, nil, "", cfg)
+					if len(peerInfo) > 0 {
+						fmt.Printf("[INFO] Conectando a %d peers nuevos del announce periódico\n", len(peerInfo))
+						if diskStore, ok := store.(*peerwire.DiskPieceStore); ok {
+							if manager, ok := mgr.(*peerwire.Manager); ok {
+								ConnectToPeers(peerInfo, infoHash, peerId, diskStore, manager)
+							}
+						}
+					}
 				}
 
 			case <-shutdownChan:
@@ -123,6 +139,10 @@ func StartPeriodicAnnounceRoutineOverlay(
 	trackerInterval time.Duration,
 	ov *overlay.Overlay,
 	providerAddr string,
+	infoHash [20]byte,
+	peerId string,
+	store interface{},
+	mgr interface{},
 ) {
 	go func() {
 		ticker := time.NewTicker(trackerInterval)
@@ -136,8 +156,19 @@ func StartPeriodicAnnounceRoutineOverlay(
 				if ov != nil {
 					ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: left})
 					fmt.Println("[INFO] Announce periódico enviado (overlay)")
+
+					// Obtener y conectar a nuevos peers del overlay
+					peerInfo := ParsePeersFromOthers(nil, ov, providerAddr, cfg)
+					if len(peerInfo) > 0 {
+						fmt.Printf("[INFO] Conectando a %d peers nuevos del overlay\n", len(peerInfo))
+						if diskStore, ok := store.(*peerwire.DiskPieceStore); ok {
+							if manager, ok := mgr.(*peerwire.Manager); ok {
+								ConnectToPeers(peerInfo, infoHash, peerId, diskStore, manager)
+							}
+						}
+					}
 				} else {
-					_, err := SendAnnounceWithFailover(
+					trackerResponse, err := SendAnnounceWithFailover(
 						cfg,
 						listenPort,
 						0, // uploaded
@@ -151,6 +182,17 @@ func StartPeriodicAnnounceRoutineOverlay(
 						fmt.Println("[ERROR] Announce periódico fallido (tracker):", err)
 					} else {
 						fmt.Println("[INFO] Announce periódico enviado (tracker)")
+
+						// Procesar nuevos peers de la respuesta
+						peerInfo := ParsePeersFromOthers(trackerResponse, nil, "", cfg)
+						if len(peerInfo) > 0 {
+							fmt.Printf("[INFO] Conectando a %d peers nuevos del announce periódico\n", len(peerInfo))
+							if diskStore, ok := store.(*peerwire.DiskPieceStore); ok {
+								if manager, ok := mgr.(*peerwire.Manager); ok {
+									ConnectToPeers(peerInfo, infoHash, peerId, diskStore, manager)
+								}
+							}
+						}
 					}
 				}
 
