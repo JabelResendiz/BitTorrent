@@ -161,16 +161,15 @@ func ConnectToPeers(peers []PeerInfo, infoHash [20]byte, peerId string,
 	}
 }
 
-func SendStoppedAnnounce(announceURL, infoHashEncoded, peerId string, listenPort int,
-	fileLength int64, computeLeft ComputeLeftFunc, hostname string) {
+func SendStoppedAnnounce(cfg *ClientConfig, listenPort int,
+	computeLeft ComputeLeftFunc, hostname string) {
 
 	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 	left := computeLeft()
-	downloaded := fileLength - left
+	downloaded := cfg.FileLength - left
 
 	var err error
-	_, err = SendAnnounce(announceURL, infoHashEncoded, peerId,
-		listenPort, 0, downloaded, left, "stopped", hostname)
+	_, err = SendAnnounceWithFailover(cfg, listenPort, 0, downloaded, left, "stopped", hostname)
 
 	if err != nil {
 		fmt.Println("[ERROR] No se pudo enviar stopped:", err)
@@ -179,22 +178,22 @@ func SendStoppedAnnounce(announceURL, infoHashEncoded, peerId string, listenPort
 	}
 }
 
-func SendStoppedAnnounceOverlay(announceURL, infoHashEncoded, peerId string, listenPort int,
-	fileLength int64, computeLeft ComputeLeftFunc, hostname string,
+func SendStoppedAnnounceOverlay(cfg *ClientConfig, listenPort int,
+	computeLeft ComputeLeftFunc, hostname string,
 	ov *overlay.Overlay, providerAddr string) {
 
-	fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
 	left := computeLeft()
-	downloaded := fileLength - left
+	downloaded := cfg.FileLength - left
 
 	var err error
 
 	if ov != nil {
-		ov.Announce(infoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: peerId, Left: left})
-		fmt.Println("[SHUTDOWN] Anuncio enviado al overlay")
+		fmt.Println("[SHUTDOWN] Enviando event=stopped al overlay...")
+		ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: left})
+		fmt.Println("[SHUTDOWN] Event=stopped enviado al overlay")
 	} else {
-		_, err = SendAnnounce(announceURL, infoHashEncoded, peerId,
-			listenPort, 0, downloaded, left, "stopped", hostname)
+		fmt.Println("[SHUTDOWN] Enviando event=stopped al tracker...")
+		_, err = SendAnnounceWithFailover(cfg, listenPort, 0, downloaded, left, "stopped", hostname)
 
 		if err != nil {
 			fmt.Println("[ERROR] No se pudo enviar stopped:", err)

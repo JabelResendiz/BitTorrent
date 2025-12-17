@@ -20,7 +20,7 @@ for i in "${!BASE_NAMES[@]}"; do
         name="${base_name%.*}$n.${base_name#*.}"
         curl -s -X POST "$API_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"name\": \"$name\", \"ip\": \"$ip\", \"ttl\": $TTL}" \
+            -d "{\"name\": \"$name\", \"ips\": [\"$ip\"], \"ttl\": $TTL}" \
             && echo -e "${GREEN}Added record: $name -> $ip (TTL $TTL)${NC}" \
             || echo -e "${RED}Failed to add record: $name${NC}"
 

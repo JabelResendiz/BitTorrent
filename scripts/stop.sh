@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Eliminar todos los contenedores Docker 
+# docker rm -f $(docker ps -aq)
+# docker rmi -f $(docker images -a)
+
+
 TRACKER_CONTAINER="tracker"
 CLIENT_BASE="client"
 BASE_VOLUME_PATH="${BT_VOLUME_PATH:-./volumen}"

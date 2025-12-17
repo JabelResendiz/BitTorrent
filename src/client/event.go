@@ -17,14 +17,12 @@ func StartCompletionAnnounceRoutine(
 		<-completedChan
 		fmt.Println("[INFO] Enviando event=completed al tracker...")
 
-		_, err := SendAnnounce(
-			cfg.AnnounceURL,
-			cfg.InfoHashEncoded,
-			cfg.PeerId,
+		_, err := SendAnnounceWithFailover(
+			cfg,
 			listenPort,
-			0,
-			cfg.FileLength,
-			0,
+			0,              // uploaded
+			cfg.FileLength, // downloaded
+			0,              // left
 			"completed",
 			hostnameFlag,
 		)
@@ -48,20 +46,19 @@ func StartCompletionAnnounceRoutineOverlay(
 
 	go func() {
 		<-completedChan
-		fmt.Println("[INFO] Enviando event=completed al tracker...")
 
 		if ov != nil {
+			fmt.Println("[INFO] Enviando event=completed al overlay...")
 			ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: 0})
 			fmt.Println("[INFO] Ahora soy un seeder completo (overlay)")
 		} else {
-			_, err := SendAnnounce(
-				cfg.AnnounceURL,
-				cfg.InfoHashEncoded,
-				cfg.PeerId,
+			fmt.Println("[INFO] Enviando event=completed al tracker...")
+			_, err := SendAnnounceWithFailover(
+				cfg,
 				listenPort,
-				0,
-				cfg.FileLength,
-				0,
+				0,              // uploaded
+				cfg.FileLength, // downloaded
+				0,              // left
 				"completed",
 				hostnameFlag,
 			)
@@ -93,10 +90,8 @@ func StartPeriodicAnnounceRoutine(
 			case <-ticker.C:
 				left := computeLeft()
 
-				_, err := SendAnnounce(
-					cfg.AnnounceURL,
-					cfg.InfoHashEncoded,
-					cfg.PeerId,
+				_, err := SendAnnounceWithFailover(
+					cfg,
 					listenPort,
 					0,    // uploaded
 					0,    // downloaded
@@ -140,21 +135,22 @@ func StartPeriodicAnnounceRoutineOverlay(
 
 				if ov != nil {
 					ov.Announce(cfg.InfoHashEncoded, overlay.ProviderMeta{Addr: providerAddr, PeerId: cfg.PeerId, Left: left})
+					fmt.Println("[INFO] Announce periódico enviado (overlay)")
 				} else {
-					_, err := SendAnnounce(
-						cfg.AnnounceURL,
-						cfg.InfoHashEncoded,
-						cfg.PeerId,
+					_, err := SendAnnounceWithFailover(
+						cfg,
 						listenPort,
-						0,
-						0,
+						0, // uploaded
+						0, // downloaded
 						left,
 						"",
 						hostname,
 					)
 
 					if err != nil {
-						fmt.Println("[ERROR] Announce periodico fallido:", err)
+						fmt.Println("[ERROR] Announce periódico fallido (tracker):", err)
+					} else {
+						fmt.Println("[INFO] Announce periódico enviado (tracker)")
 					}
 				}
 

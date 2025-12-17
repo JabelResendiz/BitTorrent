@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 )
 
 type trackerDisk struct {
@@ -45,12 +44,16 @@ func (t *Tracker) LoadFromFile() error {
 			continue
 		}
 		// Filter out peers with ancient LastSeen beyond timeout (start fresh)
+		// Calcular umbral usando HLC
+		t.hlc.Update(nil)
+		threshold := t.hlc.SubtractDuration(t.PeerTimeout * 4)
+
 		clean := &Swarm{Peers: make(map[string]*Peer)}
 		for pid, p := range sw.Peers {
 			if p == nil {
 				continue
 			}
-			if time.Since(p.LastSeen) > t.PeerTimeout*4 { // drop very old
+			if threshold.After(p.LastSeen) { // drop very old
 				continue
 			}
 			clean.Peers[pid] = p

@@ -20,6 +20,7 @@ func GeneratePeerId() string {
 	return fmt.Sprintf("-JC0001-%s", hex.EncodeToString(buf))
 }
 
+// SendAnnounce envía un announce a un tracker específico (sin failover)
 func SendAnnounce(announceURL, infoHashEncoded, peerId string, port int,
 	uploaded, downloaded, left int64, event string, hostname string) (map[string]interface{}, error) {
 
@@ -38,9 +39,10 @@ func SendAnnounce(announceURL, infoHashEncoded, peerId string, port int,
 		params.Set("event", event)
 	}
 
-	if event == "started" {
+	switch event {
+	case "started":
 		params.Set("numwant", "50")
-	} else if event == "stopped" {
+	case "stopped":
 		params.Set("numwant", "0")
 	}
 
@@ -71,6 +73,43 @@ func SendAnnounce(announceURL, infoHashEncoded, peerId string, port int,
 	}
 
 	return trackerResponse, nil
+}
+
+// SendAnnounceWithFailover envía announce con failover automático entre trackers
+func SendAnnounceWithFailover(cfg *ClientConfig, port int, uploaded, downloaded, left int64, event string, hostname string) (map[string]interface{}, error) {
+	if len(cfg.AnnounceURLs) == 0 {
+		return nil, fmt.Errorf("no hay trackers configurados")
+	}
+
+	maxAttempts := len(cfg.AnnounceURLs)
+	startIdx := cfg.CurrentTrackerIdx
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		trackerURL := cfg.GetCurrentTrackerURL()
+
+		fmt.Printf("[ANNOUNCE] Intentando con tracker: %s (intento %d/%d)\n", trackerURL, attempt+1, maxAttempts)
+
+		response, err := SendAnnounce(trackerURL, cfg.InfoHashEncoded, cfg.PeerId, port, uploaded, downloaded, left, event, hostname)
+
+		if err == nil {
+			// Éxito
+			if attempt > 0 {
+				fmt.Printf("[ANNOUNCE] ✓ Announce exitoso después de %d intentos\n", attempt+1)
+			}
+			return response, nil
+		}
+
+		// Error: intentar con el siguiente tracker
+		fmt.Printf("[ANNOUNCE] ✗ Error con tracker %s: %v\n", trackerURL, err)
+
+		if attempt < maxAttempts-1 {
+			cfg.SwitchToNextTracker()
+		}
+	}
+
+	// Todos los trackers fallaron, volver al tracker inicial
+	cfg.CurrentTrackerIdx = startIdx
+	return nil, fmt.Errorf("todos los trackers (%d) fallaron", maxAttempts)
 }
 
 // envia una peticion scrape al tracker y muestra las estadisticas

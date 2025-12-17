@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"src/client"
 	"src/overlay"
+	"src/peerwire"
 	"src/utils"
 	"strings"
 	"sync"
@@ -29,10 +30,11 @@ func main() {
 	)
 
 	var torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag string
-	var overlayPortFlag int
-	torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag, overlayPortFlag = client.ParseFlags()
+	var overlayPortFlag, httpPortFlag int
+	torrentFlag, archivesFlag, hostnameFlag, discoveryFlag, bootstrapFlag, overlayPortFlag, httpPortFlag = client.ParseFlags()
 
 	cfg := client.LoadTorrentMetadata(torrentFlag, archivesFlag)
+	cfg.HTTPPort = httpPortFlag
 	// Abrir listener local (puerto asignado automáticamente)
 
 	ln, err := net.Listen("tcp", ":0")
@@ -45,18 +47,45 @@ func main() {
 	log.Info("Cliente escuchando en puerto: %d", listenPort)
 
 	ov := client.SetupOverlay(discoveryFlag, bootstrapFlag, overlayPortFlag)
-	log.Debug("Overlay inicializado: %+v", ov)
+	if ov != nil {
+		log.Info("=== Modo de descubrimiento: OVERLAY/GOSSIP (distribuido) ===")
+	} else {
+		log.Info("=== Modo de descubrimiento: TRACKER (centralizado) ===")
+	}
+
+	// Seleccionar tracker más cercano (solo en modo tracker)
+	if ov == nil && len(cfg.AnnounceURLs) > 1 {
+		log.Info("Seleccionando tracker más cercano...")
+		client.SelectAndReorderTrackers(cfg)
+	}
 
 	store, mgr, useFinal := client.SetupStorage(cfg)
 
 	client.SetupPieceCompletionHandler(store, cfg, useFinal, completedChan, &completedMu, downloadCompleted)
+
+	// Iniciar servidor HTTP para métricas y control
+	// Extraer nombre del archivo torrent
+	torrentName := torrentFlag
+	if idx := strings.LastIndex(torrentName, "/"); idx >= 0 {
+		torrentName = torrentName[idx+1:]
+	}
+	httpServer := client.NewHTTPServer(store, mgr, cfg.FileLength, torrentName, cfg.HTTPPort)
+	go func() {
+		log.Info("Iniciando servidor HTTP en puerto %d", cfg.HTTPPort)
+		if err := httpServer.Start(); err != nil {
+			log.Error("Error en servidor HTTP: %v", err)
+		}
+	}()
+
+	// Configurar la función IsPaused para el manager
+	peerwire.IsPaused = client.IsGlobalPaused
 
 	computeLeft := client.CreateComputeLeftFunc(store, cfg.FileLength)
 
 	// Enviar announce inicial con event=started
 	initialLeft := computeLeft()
 	var trackerResponse map[string]interface{}
-	trackerInterval := 1800 * time.Second
+	trackerInterval := 60 * time.Second
 
 	if hostnameFlag == "" {
 		hostnameFlag = "127.0.0.1"
@@ -96,15 +125,15 @@ func main() {
 
 	} else {
 		initialLeft := computeLeft()
-		trackerResponse, err = client.SendAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
+		trackerResponse, err = client.SendAnnounceWithFailover(cfg, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
 		if err != nil {
-			log.Error("Error en announce inicial: %w", err)
+			log.Error("Error en announce inicial: %v", err)
 			panic(err)
 		}
 		log.Info("Tracker responde: %+v", trackerResponse)
 
 		// Hacer scrape para obtener estadísticas del torrent
-		client.SendScrape(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.InfoHash)
+		client.SendScrape(cfg.GetCurrentTrackerURL(), cfg.InfoHashEncoded, cfg.InfoHash)
 
 		// Extraer intervalo del tracker (por defecto 30 minutos)
 		if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
@@ -113,36 +142,17 @@ func main() {
 		}
 	}
 
-	// trackerResponse, err := client.SendAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, 0, 0, initialLeft, "started", hostnameFlag)
-	// if err != nil {
-	// 	panic(fmt.Errorf("error en announce inicial: %w", err))
-	// }
-	// fmt.Println("Tracker responde:", trackerResponse)
-
-	// Hacer scrape para obtener estadísticas del torrent
-	//client.SendScrape(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.InfoHash)
-
-	// Extraer intervalo del tracker (por defecto 30 minutos)
-
-	// if intervalRaw, ok := trackerResponse["interval"].(int64); ok {
-	// 	trackerInterval = time.Duration(intervalRaw) * time.Second
-	// 	fmt.Printf("Intervalo de announces: %v\n", trackerInterval)
-	// }
-
 	peerInfo := client.ParsePeersFromOthers(trackerResponse, ov, providerAddr, cfg)
-	//peerInfo := client.ParsePeersFromTracker(trackerResponse)
 
 	client.ConnectToPeers(peerInfo, cfg.InfoHash, cfg.PeerId, store, mgr)
 
 	// Aceptar conexiones entrantes
 	client.StartListeningForIncomingPeers(ln, cfg.InfoHash, cfg.PeerId, store, mgr)
 
-	// Goroutine: Announces periódicos al tracker
-	//client.StartPeriodicAnnounceRoutine(cfg, listenPort, hostnameFlag, computeLeft, shutdownChan, trackerInterval)
+	// Goroutine: Announces periódicos (tracker o overlay según modo)
 	client.StartPeriodicAnnounceRoutineOverlay(cfg, listenPort, hostnameFlag, computeLeft, shutdownChan, trackerInterval, ov, providerAddr)
 
 	// Goroutine: Detectar completación y enviar event=completed
-	//client.StartCompletionAnnounceRoutine(completedChan, cfg, listenPort, hostnameFlag)
 	client.StartCompletionAnnounceRoutineOverlay(completedChan, cfg, listenPort, hostnameFlag, ov, providerAddr)
 
 	// Configurar captura de señales del sistema
@@ -162,18 +172,14 @@ func main() {
 	// Notificar a todas las goroutines que deben detenerse
 	close(shutdownChan)
 
-	// Enviar stopped al tracker
-	//client.SendStoppedAnnounce(cfg.AnnounceURL, cfg.InfoHashEncoded, cfg.PeerId, listenPort, cfg.FileLength, computeLeft, hostnameFlag)
+	// Enviar stopped (tracker o overlay según modo)
 	client.SendStoppedAnnounceOverlay(
-		cfg.AnnounceURL,
-		cfg.InfoHashEncoded,
-		cfg.PeerId, 
-		listenPort, 
-		cfg.FileLength, 
-		computeLeft, 
-		hostnameFlag, 
-		ov, 
-		providerAddr ,
+		cfg,
+		listenPort,
+		computeLeft,
+		hostnameFlag,
+		ov,
+		providerAddr,
 	)
 
 	// Cerrar el listener de conexiones
