@@ -159,6 +159,7 @@ func (p *PeerConn) handleMessage(id byte, payload []byte) {
 
 				delete(pd.blocksPending, blockNum)
 				delete(pd.blocksInProgress, blockNum)
+				delete(pd.blockRequestTime, blockNum) // Limpiar tiempo de solicitud
 
 				// Verificar si la pieza está completa
 				if len(pd.blocksPending) == 0 {

@@ -3,6 +3,7 @@ package peerwire
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // PieceDownload rastrea el estado de descarga de una pieza desde múltiples peers
@@ -11,6 +12,7 @@ type PieceDownload struct {
 	blocksPending    map[int]bool      // bloque index -> true si falta descargar
 	blocksInProgress map[int]*PeerConn // bloque index -> peer que lo está descargando
 	blocksReceived   map[string]int    // peerAddr -> cantidad de bloques recibidos
+	blockRequestTime map[int]time.Time // bloque index -> tiempo de solicitud
 }
 
 type Manager struct {
@@ -146,6 +148,7 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 		blocksPending:    make(map[int]bool),
 		blocksInProgress: make(map[int]*PeerConn),
 		blocksReceived:   make(map[string]int),
+		blockRequestTime: make(map[int]time.Time),
 	}
 	m.downloadsMu.Unlock()
 
@@ -203,6 +206,7 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 
 		m.downloadsMu.Lock()
 		pd.blocksInProgress[blockNum] = peer
+		pd.blockRequestTime[blockNum] = time.Now()
 		m.downloadsMu.Unlock()
 
 		// Log: Mostrar desde qué peer se solicita el bloque
@@ -215,8 +219,66 @@ func (m *Manager) DownloadPieceParallel(pieceIndex int) {
 		// Enviar REQUEST
 		peer.SendBlockRequest(uint32(pieceIndex), uint32(offset), uint32(sz))
 
+		// Iniciar goroutine de timeout para este bloque
+		go m.watchBlockTimeout(pieceIndex, blockNum, 30*time.Second)
+
 		peerIndex++
 	}
+}
+
+// watchBlockTimeout monitorea si un bloque tarda demasiado en llegar y lo reintenta
+func (m *Manager) watchBlockTimeout(pieceIndex, blockNum int, timeout time.Duration) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	<-timer.C
+
+	// Verificar si el bloque sigue pendiente después del timeout
+	m.downloadsMu.Lock()
+	pd, exists := m.pieceDownloads[pieceIndex]
+	if !exists {
+		m.downloadsMu.Unlock()
+		return // La pieza ya se completó
+	}
+
+	// Verificar si el bloque todavía está en progreso
+	peer, inProgress := pd.blocksInProgress[blockNum]
+	if !inProgress {
+		m.downloadsMu.Unlock()
+		return // El bloque ya fue recibido
+	}
+
+	// Verificar el tiempo transcurrido desde la solicitud
+	requestTime, hasTime := pd.blockRequestTime[blockNum]
+	if hasTime && time.Since(requestTime) >= timeout {
+		peerAddr := "unknown"
+		if peer != nil && peer.Conn != nil && peer.Conn.RemoteAddr() != nil {
+			peerAddr = peer.Conn.RemoteAddr().String()
+		}
+
+		fmt.Printf("[TIMEOUT] Bloque %d de pieza %d excedió timeout de %v (peer %s)\n",
+			blockNum, pieceIndex, timeout, peerAddr)
+
+		// Liberar el bloque y marcarlo como pendiente
+		delete(pd.blocksInProgress, blockNum)
+		delete(pd.blockRequestTime, blockNum)
+		pd.blocksPending[blockNum] = true
+
+		// Cerrar conexión con el peer lento/muerto
+		if peer != nil {
+			fmt.Printf("[TIMEOUT] Cerrando conexión con peer lento: %s\n", peerAddr)
+			peer.Close()
+		}
+
+		blocksToRetry := []int{blockNum}
+		m.downloadsMu.Unlock()
+
+		// Reintentar el bloque desde otro peer
+		m.retryPendingBlocks(pieceIndex, blocksToRetry)
+		return
+	}
+
+	m.downloadsMu.Unlock()
 }
 
 // retryPendingBlocks reintenta descargar bloques pendientes de una pieza desde peers disponibles
@@ -262,6 +324,7 @@ func (m *Manager) retryPendingBlocks(pieceIndex int, blocks []int) {
 		m.downloadsMu.Lock()
 		if pd, exists := m.pieceDownloads[pieceIndex]; exists {
 			pd.blocksInProgress[blockNum] = peer
+			pd.blockRequestTime[blockNum] = time.Now()
 			delete(pd.blocksPending, blockNum)
 		}
 		m.downloadsMu.Unlock()
@@ -273,6 +336,10 @@ func (m *Manager) retryPendingBlocks(pieceIndex int, blocks []int) {
 		fmt.Printf("  → [RETRY] Solicitando bloque %d de pieza %d a peer %s\n", blockNum, pieceIndex, peerAddr)
 
 		peer.SendBlockRequest(uint32(pieceIndex), uint32(offset), uint32(sz))
+
+		// Iniciar timeout para el reintento
+		go m.watchBlockTimeout(pieceIndex, blockNum, 30*time.Second)
+
 		peerIndex++
 	}
 }
