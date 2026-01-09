@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"src/peerwire"
+	"time"
 )
 
 func StartListeningForIncomingPeers(ln net.Listener, infoHash [20]byte, peerId string,
@@ -18,6 +19,13 @@ func StartListeningForIncomingPeers(ln net.Listener, infoHash [20]byte, peerId s
 				fmt.Println("Error aceptando conexión:", err)
 				continue
 			}
+
+			// Habilitar TCP keepalive en conexiones entrantes
+			if tcpConn, ok := c.(*net.TCPConn); ok {
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(30 * time.Second)
+			}
+
 			go handleIncomingPeerConnection(c, infoHash, peerId, store, mgr)
 		}
 	}()

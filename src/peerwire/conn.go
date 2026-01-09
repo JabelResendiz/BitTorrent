@@ -12,6 +12,12 @@ func NewPeerConn(addr string, infoHash [20]byte, peerId [20]byte) (*PeerConn, er
 		return nil, fmt.Errorf("error conectando al peer %s: %v", addr, err)
 	}
 
+	// Habilitar TCP keepalive para detectar conexiones muertas
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
+
 	return &PeerConn{
 		Conn:           conn,
 		InfoHash:       infoHash,
