@@ -63,6 +63,7 @@ func (m *Manager) RemovePeer(p *PeerConn) {
 		// Liberar esos bloques y devolverlos a pending
 		for _, blockNum := range blocksToRetry {
 			delete(pd.blocksInProgress, blockNum)
+			delete(pd.blockRequestTime, blockNum) // Limpiar tiempo de solicitud
 			pd.blocksPending[blockNum] = true
 			fmt.Printf("[CLEANUP] Bloque %d de pieza %d liberado por peer desconectado\n", blockNum, pieceIndex)
 		}
