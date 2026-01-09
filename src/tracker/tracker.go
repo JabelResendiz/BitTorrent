@@ -253,6 +253,58 @@ func (t *Tracker) StopSync() {
 	}
 }
 
+// GetActiveNodes devuelve una lista de nodos activos en el tracker
+func (t *Tracker) GetActiveNodes() []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	
+	nodesMap := make(map[string]bool)
+	
+	for _, swarm := range t.Torrents {
+		for _, peer := range swarm.Peers {
+			if !peer.Deleted {
+				nodesMap[peer.HostName] = true
+			}
+		}
+	}
+	
+	nodes := make([]string, 0, len(nodesMap))
+	for node := range nodesMap {
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+// GetSwarmInfo devuelve información del swarm de un torrent
+func (t *Tracker) GetSwarmInfo(infoHashHex string) (complete, incomplete, total int, nodes []string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	
+	nodesMap := make(map[string]bool)
+	
+	if sw := t.Torrents[infoHashHex]; sw != nil {
+		for _, p := range sw.Peers {
+			if p.Deleted {
+				continue
+			}
+			total++
+			if p.Completed {
+				complete++
+			} else {
+				incomplete++
+			}
+			nodesMap[p.HostName] = true
+		}
+	}
+	
+	nodes = make([]string, 0, len(nodesMap))
+	for node := range nodesMap {
+		nodes = append(nodes, node)
+	}
+	
+	return
+}
+
 // Paths
 // dataTempPath devuelve la ruta temporal usada durante guardados atómicos.
 func (t *Tracker) dataTempPath() string { return t.DataPath + ".tmp" }
