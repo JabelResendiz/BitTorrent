@@ -86,6 +86,12 @@ func main() {
 	http.HandleFunc("/announce", t.AnnounceHandler)
 	// Registra el handler /scrape del tracker.
 	http.HandleFunc("/scrape", t.ScrapeHandler)
+	// Registra el handler /nodes para ver nodos activos
+	http.HandleFunc("/nodes", func(w http.ResponseWriter, r *http.Request) {
+		nodes := t.GetActiveNodes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"nodes":%v,"count":%d}`, nodes, len(nodes))
+	})
 
 	// GC loop
 	// Bucle en background que expira peers inactivos periódicamente y persiste
@@ -97,6 +103,20 @@ func main() {
 			if exp := t.GC(); exp > 0 {
 				_ = t.SaveToFile()
 				log.Printf("gc expired %d peers", exp)
+			}
+		}
+	}()
+
+	// Bucle de status que muestra nodos activos cada 30 segundos
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			nodes := t.GetActiveNodes()
+			if len(nodes) > 0 {
+				log.Printf("[STATUS] Nodos activos en tracker: %v (total: %d)", nodes, len(nodes))
+			} else {
+				log.Printf("[STATUS] No hay nodos activos")
 			}
 		}
 	}()

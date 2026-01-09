@@ -80,19 +80,31 @@ func (t *Tracker) AnnounceHandler(w http.ResponseWriter, r *http.Request) {
 	case "stopped":
 		log.Printf("event=stopped from %s (ih=%s pid=%s)", hostname, infoHex[:8], peerHex[:8])
 		_ = t.SaveOnChange(func() { t.RemovePeer(infoHex, peerHex) })
+		complete, incomplete, total, nodes := t.GetSwarmInfo(infoHex)
+		log.Printf("[SWARM] Torrent %s - Seeders: %d | Leechers: %d | Total: %d | Nodos: %v", 
+			infoHex[:8], complete, incomplete, total, nodes)
 
 	case "started":
 		log.Printf("event=started from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
 		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed) })
+		complete, incomplete, total, nodes := t.GetSwarmInfo(infoHex)
+		log.Printf("[SWARM] Torrent %s - Seeders: %d | Leechers: %d | Total: %d | Nodos: %v", 
+			infoHex[:8], complete, incomplete, total, nodes)
 
 	case "completed":
 		log.Printf("event=completed from %s (ih=%s pid=%s) - peer is now seeder!", hostname, infoHex[:8], peerHex[:8])
 		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), true) })
+		complete, incomplete, total, nodes := t.GetSwarmInfo(infoHex)
+		log.Printf("[SWARM] Torrent %s - Seeders: %d | Leechers: %d | Total: %d | Nodos: %v", 
+			infoHex[:8], complete, incomplete, total, nodes)
 
 	default:
 		// Announce regular sin evento (periódico)
 		log.Printf("periodic announce from %s (ih=%s pid=%s left=%d)", hostname, infoHex[:8], peerHex[:8], left)
 		_ = t.SaveOnChange(func() { t.AddPeer(infoHex, peerHex, hostname, uint16(port64), completed) })
+		complete, incomplete, total, nodes := t.GetSwarmInfo(infoHex)
+		log.Printf("[SWARM] Torrent %s - Seeders: %d | Leechers: %d | Total: %d | Nodos: %v", 
+			infoHex[:8], complete, incomplete, total, nodes)
 	}
 
 	// Build peer list excluding requester
