@@ -1,0 +1,4 @@
+web/* linguist-vendored
+web/** linguist-vendored
+web/**/*.ts linguist-vendored=true
+web/**/*.tsx linguist-vendored=true
