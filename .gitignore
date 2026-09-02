@@ -48,6 +48,7 @@ api_server
 src/client/cmd/main
 src/client/cmd/client
 src/main
+src/tracker/cmd/tracker
 
 # Backup files
 *.backup
