@@ -1,11 +1,11 @@
 
 # ✅ **BitTorrent**
 
-Este proyecto implementa un sistema BitTorrent distribuido con descubrimiento P2P mediante **Docker**, **Go** y **overlay networks**.
+This project implements a distributed BitTorrent system with P2P discovery using **Docker**, **Go**, and **overlay networks**.
 
 ---
 
-## 📦 **1. Clonar el proyecto**
+## 📦 **1. Clone the project**
 
 ```bash
 git clone https://github.com/JabelResendiz/BitTorrent.git
@@ -14,9 +14,9 @@ cd BitTorrent/src
 
 ---
 
-## 🏗️ **2. Construir las imágenes Docker**
+## 🏗️ **2. Build the Docker images**
 
-Ejecutar desde la carpeta `src`:
+Run from the `src` directory:
 
 ```bash
 docker build -t client_img -f client/Dockerfile .
@@ -25,15 +25,15 @@ docker build -t tracker_img -f tracker/Dockerfile .
 
 ---
 
-## 🚀 **3. Crear el archivo .torrent y preparar archivos**
+## 🚀 **3. Create the .torrent file and prepare the files**
 
-1. Coloca el archivo original a compartir en:
+1. Place the original file to share in:
 
 ```lua
 archives/seeder/
 ```
 
-2. Genera el `.torrent` usando `mktorrent`
+2. Generate the `.torrent` using `mktorrent`
 
 ```bash
 sudo apt install mktorrent
@@ -42,13 +42,13 @@ mktorrent -a http://tracker:8080/announce \
   archives/seeder/video.mp4
 ```
 
-Donde:
+Where:
 
-* `-a` → URL del tracker(si es usando la red overlay no importa esto)
-* `-o` → ruta donde guardar el .torrent
-* último argumento → archivo original
+* `-a` → tracker URL (if using the overlay network, this does not matter)
+* `-o` → path where the .torrent will be saved
+* last argument → original file
 
-Asegúrate de que exista:
+Make sure this exists:
 
 ```lua
 archives/torrents/video.torrent
@@ -56,25 +56,25 @@ archives/torrents/video.torrent
 
 ---
 
-## 🧰 **4. Ejecutar TODO automáticamente (recomendado)**
+## 🧰 **4. Run EVERYTHING automatically (recommended)**
 
-Usando tu script `run_containers.sh`:
+Using the `run_containers.sh` script:
 
 ```bash
 chmod +x script/run_containers.sh
 ./script/run_containers.sh
 ```
 
-Este script:
+This script:
 
-* Crea la red `bittorrent` si no existe
-* Verifica que exista el `.torrent`
-* Limpia contenedores anteriores
-* Lanza el **seeder**
-* Lanza múltiples **leechers**
-* Cada cliente se inicia con su puerto, hostname y bootstrap correspondiente
+* Creates the `bittorrent` network if it does not exist
+* Verifies that the `.torrent` exists
+* Cleans up previous containers
+* Starts the **seeder**
+* Starts multiple **leechers**
+* Each client starts with its corresponding port, hostname, and bootstrap
 
-Si deseas correrlo **sin reconstruir la imagen**, ejecuta:
+To run it **without rebuilding the image**, execute:
 
 ```bash
 ./script/run_containers.sh --no-build
@@ -82,23 +82,23 @@ Si deseas correrlo **sin reconstruir la imagen**, ejecuta:
 
 ---
 
-## 🛠️ **5. Ejecución manual (sin script)**
+## 🛠️ **5. Manual execution (without the script)**
 
-### 🛰️ Ejecutar el Tracker
+### 🛰️ Run the Tracker
 
-En una terminal:
+In one terminal:
 
 ```bash
 go run tracker/cmd/main.go
 ```
 
-Esto corre el tracker en:
+This runs the tracker at:
 
 ```lua
 localhost:8080
 ```
 
-Salida esperada:
+Expected output:
 
 ```lua
 tracker listening on :8080 interval=1800s data=tracker_data.json
@@ -106,9 +106,9 @@ tracker listening on :8080 interval=1800s data=tracker_data.json
 
 ---
 
-### 💻 Ejecutar el Cliente
+### 💻 Run the Client
 
-En otra terminal:
+In another terminal:
 
 ```bash
 go run client/cmd/main.go \
@@ -116,14 +116,14 @@ go run client/cmd/main.go \
   --archives="./archives/seeder"
 ```
 
-Salida típica:
+Typical output:
 
 ```lua
 Tracker request:  http://localhost:8080/announce?info_hash=...
-Tracker responde: map[complete:0 incomplete:1 interval:1800 peers:]
+Tracker response: map[complete:0 incomplete:1 interval:1800 peers:]
 ```
 
-Los peers registrados aparecerán en:
+Registered peers will appear in:
 
 ```lua
 tracker_data.json
@@ -131,9 +131,9 @@ tracker_data.json
 
 ---
 
-## 🧵 **6. Ejecutar clientes dentro de Docker (manual)**
+## 🧵 **6. Run clients inside Docker (manual)**
 
-Ejemplo un cliente seeder:
+Example seeder client:
 
 ```bash
 docker network create bittorrent
@@ -150,7 +150,7 @@ docker run -d --name seeder --network bittorrent \
   --overlay-port=6000
 ```
 
-Ejemplo cliente leecher con bootstrap:
+Example leecher client with bootstrap:
 
 ```bash
 docker run -d --name leecher1 --network bittorrent \
@@ -168,42 +168,42 @@ docker run -d --name leecher1 --network bittorrent \
 
 ---
 
-## 🐳 **7. Ejecutar múltiples clientes en varias PCs usando Docker Swarm**
+## 🐳 **7. Run multiple clients on several PCs using Docker Swarm**
 
-Para permitir que varios *clients* (leecher/seeder) corran en diferentes máquinas dentro de una red distribuida, utilizamos **Docker Swarm** y una **red overlay** compartida.
+To allow several *clients* (leecher/seeder) to run on different machines in a distributed network, we use **Docker Swarm** and a shared **overlay network**.
 
 ---
 
-### 🖥️ **Paso 1 — Construir las imágenes (solo una vez)**
+### 🖥️ **Step 1 — Build the images (only once)**
 
-Desde la carpeta `src/`:
+From the `src/` directory:
 
 ```bash
 docker build -t client -f client/Dockerfile .
 docker build -t tracker -f tracker/Dockerfile .
 ```
 
-Debes copiar estas imágenes a cada PC, o subirlas a un registry privado si lo deseas.
+You must copy these images to each PC, or upload them to a private registry if desired.
 
 ---
 
-### 🖥️ PC 1 — **Nodo Manager del Swarm**
+### 🖥️ PC 1 — **Swarm Manager Node**
 
-Inicializa el cluster:
+Initialize the cluster:
 
 ```bash
 docker swarm init
 ```
 
-Obtén el token para agregar más nodos:
+Get the token to add more nodes:
 
 ```bash
 docker swarm join-token manager
 ```
 
-(El comando resultante debes copiarlo hacia las otras PCs).
+(Copy the resulting command to the other PCs.)
 
-Luego crea la red overlay distribuida:
+Then create the distributed overlay network:
 
 ```bash
 docker network create --driver overlay bittorrent-net
@@ -211,21 +211,21 @@ docker network create --driver overlay bittorrent-net
 
 ---
 
-### 🖥️ PC 2 (y cualquier otra) — **Nodos Worker**
+### 🖥️ PC 2 (and any others) — **Worker Nodes**
 
-En esta PC pega el comando generado por `join-token`, por ejemplo:
+On this PC, paste the command generated by `join-token`, for example:
 
 ```bash
 docker swarm join --token <TOKEN>
 ```
 
-Luego comprueba que la red overlay está disponible:
+Then verify that the overlay network is available:
 
 ```bash
 docker network ls
 ```
 
-Verás algo como:
+You will see something like:
 
 ```lua
 bittorrent-net   overlay   swarm
@@ -233,9 +233,9 @@ bittorrent-net   overlay   swarm
 
 ---
 
-### 🚀 **Deploy Manual de Servicios (Tracker y Clientes)**
+### 🚀 **Manual Service Deployment (Tracker and Clients)**
 
-#### **1. Tracker (en cualquier nodo del cluster)**
+#### **1. Tracker (on any cluster node)**
 
 ```bash
 docker service create \
@@ -245,9 +245,9 @@ docker service create \
   tracker
 ```
 
-#### **2. Seeder y Leechers**
+#### **2. Seeder and Leechers**
 
-Ejemplo: correr un seeder y dos leechers distribuidos automáticamente por el Swarm:
+Example: run one seeder and two leechers distributed automatically by Swarm:
 
 ```bash
 docker run -it --name seeder --network bittorrent-net \
@@ -274,13 +274,13 @@ docker run -it --name leecher1 --network bittorrent-net \
   --bootstrap=seeder:6000
 ```
 
-Las réplicas se distribuyen automáticamente por las PCs del Swarm.
+The replicas are distributed automatically across the Swarm PCs.
 
 ---
 
-### 🧪 Verificar que el cluster funciona
+### 🧪 Verify that the cluster works
 
-En cualquier PC del cluster:
+On any PC in the cluster:
 
 ```bash
 docker node ls
@@ -292,68 +292,68 @@ docker service ps leecher
 
 ---
 
-### 🎉 Resultado
+### 🎉 Result
 
-* Los clientes y tracker(si fuese necesario) están corriendo en **varias máquinas distribuidas**
-* Se comunican mediante una **red overlay**
-* Docker Swarm balancea y administra automáticamente los nodos
-
----
-
-## 📄 **8. Especificación del Archivo .torrent (Metainfo)**
-
-Los archivos `.torrent` están **bencodeados**.  
-Un `.torrent` es un **diccionario** con estas claves principales (todas cadenas en **UTF-8**):
-
-- **info**: diccionario que describe los archivos del torrent
-  - *single-file*: un archivo
-  - *multi-file*: múltiples archivos
-- **announce**: URL del tracker (cadena)
-- **announce-list**: *(opcional)* lista de trackers alternativos
-- **creation date**: *(opcional)* fecha en formato UNIX epoch (entero, segundos desde 1-ene-1970)
-- **comment**: *(opcional)* texto libre del autor
-- **created by**: *(opcional)* cliente que generó el torrent
-- **encoding**: *(opcional)* formato de cadenas en `info`
+* The clients and tracker (if needed) are running on **several distributed machines**
+* They communicate through an **overlay network**
+* Docker Swarm automatically balances and manages the nodes
 
 ---
 
-### Diccionario `info`
+## 📄 **8. .torrent File Specification (Metainfo)**
 
-#### Campos comunes
+`.torrent` files are **bencoded**.  
+A `.torrent` is a **dictionary** with these main keys (all strings are **UTF-8**):
 
-- **piece length**: bytes por pieza (entero)
-- **pieces**: concatenación de hashes SHA-1 de 20 bytes
-- **private**: *(opcional)*
-  - `1`: solo usa trackers listados
-  - `0` o ausente: puede usar DHT, PEX, etc.
+- **info**: dictionary describing the torrent files
+  - *single-file*: one file
+  - *multi-file*: multiple files
+- **announce**: tracker URL (string)
+- **announce-list**: *(optional)* list of alternative trackers
+- **creation date**: *(optional)* UNIX epoch date (integer, seconds since Jan 1, 1970)
+- **comment**: *(optional)* free-form text from the author
+- **created by**: *(optional)* client that generated the torrent
+- **encoding**: *(optional)* string encoding in `info`
 
 ---
 
-#### Modo Single-File
-Un torrent que **descarga un solo archivo**. El `info` contiene directamente el tamaño y nombre del archivo. Todas las piezas corresponden únicamente a ese archivo.
-- **name**: nombre del archivo (cadena)
-- **length**: tamaño en bytes (entero)
-- **piece length**: tamaño de las piezas
-- **pieces** : SHA1 concatenados
-- **md5sum**: *(opcional)* hash MD5
+### `info` Dictionary
+
+#### Common fields
+
+- **piece length**: bytes per piece (integer)
+- **pieces**: concatenation of 20-byte SHA-1 hashes
+- **private**: *(optional)*
+  - `1`: use listed trackers only
+  - `0` or absent: DHT, PEX, etc. may be used
+
+---
+
+#### Single-File Mode
+A torrent that **downloads a single file**. The `info` dictionary directly contains the file size and name. All pieces correspond only to this file.
+- **name**: file name (string)
+- **length**: size in bytes (integer)
+- **piece length**: piece size
+- **pieces**: concatenated SHA-1 hashes
+- **md5sum**: *(optional)* MD5 hash
 
 ```json
 "info": {
-  "name": "archivo.txt",
+  "name": "file.txt",
   "length": 123456,
   "piece length": 16384,
-  "pieces": "<SHA1 concatenados>"
+  "pieces": "<concatenated SHA1 hashes>"
 }
 ```
 
 ---
 
-#### Modo Multi-File
-Un torrent que contiene **varios archivos dentro de una carpeta raíz**. En este caso, `info` tiene una **lista de archivos `files`** en lugar de un `length` único.
+#### Multi-File Mode
+A torrent containing **several files inside a root directory**. In this case, `info` contains a **`files` list** instead of a single `length` value.
 
 ```json
 "info": {
-  "name": "Mi_Carpeta",
+  "name": "My_Folder",
   "piece length": 32768,
   "pieces": "<SHA1 concatenados>",
   "files": [
@@ -371,36 +371,36 @@ Un torrent que contiene **varios archivos dentro de una carpeta raíz**. En este
 
 ---
 
-### Notas sobre piezas
+### Notes on pieces
 
-- Tamaño suele ser potencia de 2
-- Históricamente: torrent ≤ 75 KB
-- Recomendado: piezas ≤ 512 KB para torrents de 8–10 GB
-- Usuales: 256 KB, 512 KB, 1 MB
-- Todas las piezas mismo tamaño salvo la última
-- En multi-file, los archivos se concatenan → piezas pueden cruzar archivos
-- Cada pieza se representa por un hash SHA-1 (20 bytes) en `pieces`
+- Size is usually a power of 2
+- Historically: torrent ≤ 75 KB
+- Recommended: pieces ≤ 512 KB for 8–10 GB torrents
+- Common sizes: 256 KB, 512 KB, 1 MB
+- All pieces have the same size except the last one
+- In multi-file torrents, files are concatenated → pieces may cross file boundaries
+- Each piece is represented by a SHA-1 hash (20 bytes) in `pieces`
 
 ---
 
-### Ejemplo de archivo .torrent (bencodeado)
+### Example .torrent file (bencoded)
 
-#### Versión "single-file"
+#### "single-file" version
 
 
-- `announce`: URL del tracker.  
-- `announce list` : (lista de lista de URL)
-- `creation date`: fecha
-- `comment` : comentarios
-- `created by` : autor
-- `info`: diccionario con detalles del archivo:
-  - `length`: tamaño en bytes del archivo.  
-  - `name`: nombre del archivo.  
-  - `piece length`: tamaño en bytes de cada pieza.  
-  - `pieces`: concatenación de hashes SHA-1 de 20 bytes cada uno.  
+- `announce`: tracker URL.  
+- `announce list`: (list of URL lists)
+- `creation date`: date
+- `comment`: comments
+- `created by`: author
+- `info`: dictionary with file details:
+  - `length`: file size in bytes.  
+  - `name`: file name.  
+  - `piece length`: size in bytes of each piece.  
+  - `pieces`: concatenation of 20-byte SHA-1 hashes.  
   - `private`  
 
-#### Versión JSON 
+#### JSON version 
 
 ```json
 {
@@ -410,18 +410,18 @@ Un torrent que contiene **varios archivos dentro de una carpeta raíz**. En este
     ["http://backuptracker.example.net/announce"]
   ],
   "creation date": 1695600000,
-  "comment": "Ejemplo de torrent educativo",
+  "comment": "Educational torrent example",
   "created by": "ChatGPT TorrentMaker v1.0",
   "info": {
-    "name": "archivo.txt",
+    "name": "file.txt",
     "length": 123456,
     "piece length": 16384,
-    "pieces": "<concatenación binaria de SHA1 de 20 bytes cada uno>",
+    "pieces": "<binary concatenation of 20-byte SHA1 hashes>",
     "private": 0
   }
 }
 ```
-#### Misma versión bencode
+#### Same version in bencode
 ```bencode
 d
 8:announce23:http://tracker.example.com/announce
@@ -434,13 +434,13 @@ d
   e
 e
 13:creation datei1695600000e
-7:comment27:Ejemplo de torrent educativo
+7:comment27:Educational torrent example
 10:created by27:ChatGPT TorrentMaker v1.0
 4:infod
-  4:name11:archivo.txt
+  4:name8:file.txt
   6:lengthi123456e
   12:piece lengthi16384e
-  6:pieces40:<SHA1 pieza 1><SHA1 pieza 2>...
+  6:pieces40:<SHA1 piece 1><SHA1 piece 2>...
   7:privatei0e
 e
 e
@@ -448,67 +448,67 @@ e
 
 ---
 
-## 📘 **9. Módulo Tracker**
+## 📘 **9. Tracker Module**
 
-El tracker no guarda “quién tiene cada pieza del archivo”, sino quién está participando en ese torrent en general.
+The tracker does not store “who has each piece of the file”; it stores who is participating in that torrent in general.
 
-📌 En concreto:
+📌 Specifically:
 
-El torrent file se identifica por su info_hash (SHA1 del diccionario info).
+The torrent file is identified by its info_hash (SHA-1 of the info dictionary).
 
-Cuando un cliente hace announce al tracker, le dice:
+When a client announces to the tracker, it says:
 
-“Estoy en el swarm del torrent con info_hash = X”
+“I am in the swarm for the torrent with info_hash = X”
 
-Y pasa su peer_id, ip, port, y su estado (started, stopped, completed).
+It passes its peer_id, IP, port, and state (started, stopped, completed).
 
-El tracker anota: “Peer Y está en el torrent X”.
+The tracker records: “Peer Y is in torrent X”.
 
-Opcionalmente, lleva un conteo de cuántos peers están completos (seeders) y cuántos no (leechers).
+Optionally, it counts how many peers have completed the file (seeders) and how many have not (leechers).
 
-Pero no sabe si tienes la pieza #5 o la #200. Eso lo sabe solo cada peer, y te lo dice luego vía bitfield o mensajes have.
+However, it does not know whether you have piece #5 or #200. Each peer knows that, and later reports it through a bitfield or have messages.
 
-- El **tracker** es un servicio HTTP/HTTPS que responde a sus solicitudes **HTTP GET**. Las solicitudes incluyen métricas de los clientes que ayudan al tracker a mantener estadísticas generales sobre el torrent. 
+- The **tracker** is an HTTP/HTTPS service that responds to **HTTP GET** requests. Requests include client metrics that help the tracker maintain general statistics about the torrent. 
 
-- La respeta incluye una **lista de pares (peers)** que ayuda al cliente a participar en el torrent.
+- The response includes a **list of peers** that helps the client participate in the torrent.
 
 
-### Parámetros de la solicitud del cliente al tracker
+### Client request parameters to the tracker
 
-Los parámetros usados en la solicitud **GET** del cliente -> tracker son los siguientes :
+The parameters used in the client's **GET** request to the tracker are:
 
-- **info_hash :** hash SHA1 de 20 bytes (codificado en URL) del valor de la clave `info` del archivo metainfo . Este valor será un diccionario bencodeado, dado lo que define la clave `info`
+- **info_hash:** 20-byte SHA-1 hash (URL-encoded) of the `info` key's value in the metainfo file. This value is a bencoded dictionary, as defined by the `info` key.
 
-- **peer_id :** cadena de 20 bytes (codificada en URL) usada como ID único del cliente, generado al inicio. Puede ser cualquier valor; no hay reglas para generarlo , único en la máquina local (incluir ID de proceso + timestamp)
+- **peer_id:** 20-byte string (URL-encoded) used as the client's unique ID, generated at startup. It may have any value; there are no generation rules. It must be unique on the local machine (include process ID + timestamp).
 
-- **port :** el número de puerto en el que escucha el cliente. Los puertos reservados para BitTorrent son 6881-6889. Si no puede usar uno de ellos, algunos clientes simplemente abandonan
+- **port:** the port number on which the client listens. Ports 6881–6889 are reserved for BitTorrent. If it cannot use one of them, some clients simply give up.
 
-- **uploaded :** total de bytes subidos desde el cliente envión el evento `started` al tracker (en ASCII base 10)
+- **uploaded:** total bytes uploaded by the client when sending the `started` event to the tracker (in base-10 ASCII).
 
-- **downloaded :** total de bytes descargados desde el evento `started` (en ASCII base 10)
+- **downloaded:** total bytes downloaded since the `started` event (in base-10 ASCII).
 
-- **left :** número de bytes que el cliente aún debe descargar (en ASCII base 10), es decir lo que falta para tener el 100% del torrent
+- **left:** number of bytes the client still needs to download (in base-10 ASCII), that is, the amount remaining to have 100% of the torrent.
 
-- **compact :** si se establece en `1`, el cliente acepta una respuesta compacta. En ese caso , la lista de peers es reemplzada por una cadean binaria de 6 bytes por peer:
-    - 4 bytes -> IP en network by order
-    - 2 bytes -> puerto en network byte order
-    - ALgunos trackers solo aceptan compact = 1, rechazando otras solicitudes
+- **compact:** if set to `1`, the client accepts a compact response. In that case, the peer list is replaced by a 6-byte binary string per peer:
+  - 4 bytes -> IP in network byte order
+  - 2 bytes -> port in network byte order
+  - Some trackers accept only compact = 1 and reject other requests
 
-- **no_peer_id :** indica que el tracker puede omitir el campo `peer_id` en la lista de peers. Ignorado si `compact = 1`
+- **no_peer_id:** indicates that the tracker may omit the `peer_id` field from the peer list. Ignored if `compact = 1`.
 
-- **event :** si se especifica , debe ser uno de:
-    - `started` : el primer request al tracker debe incluirlo
-    - `stopped` : cuando el cliente se apaga ordenadamente
-    - `completed` : cuando el torrent termina al 100% (pero no si ya estaba completo al inicio)
-    - `vacío` : igual a no especificarlo (solicitudes regulares)
+- **event:** if specified, it must be one of:
+  - `started`: the first request to the tracker must include it
+  - `stopped`: when the client shuts down cleanly
+  - `completed`: when the torrent reaches 100% (but not if it was already complete at startup)
+  - `empty`: equivalent to omitting it (regular requests)
 
-- **ip (opcional) :** la IP real del cliente. Puede estar en formato IPv4o IPv6
+- **ip (optional):** the client's real IP address. It may be in IPv4 or IPv6 format.
 
-- **numwant (opcional) :**numero de peers que el cliente desea recibir. Puede ser `0`. Si se omite , por defecto suelen ser de `50 peers`
+- **numwant (optional):** number of peers the client wants to receive. It may be `0`. If omitted, the usual default is `50 peers`.
 
-- **key (opcional) :** identificador extra no compartido con otros peers. Sirve para que un cliente demuestre su identidad si cambia de IP
+- **key (optional):** extra identifier not shared with other peers. It allows a client to prove its identity if its IP changes.
 
-- **trackerid (opcional) :** si el tracker devolvió un `tracker_id` en una announce previa, debe reenviarse aquí
+- **trackerid (optional):** if the tracker returned a `tracker_id` in a previous announce, it must be sent again here.
 
 ```http
 GET /announce?info_hash=%12%34%56%78%9A%BC%DE%F1%23%45%67%89%AB%CD%EF%12%34%56%78%9A
@@ -519,38 +519,38 @@ GET /announce?info_hash=%12%34%56%78%9A%BC%DE%F1%23%45%67%89%AB%CD%EF%12%34%56%7
 &left=123456789
 &compact=1
 &event=started HTTP/1.1
-Host: tracker.ejemplo.com:6969
-User-Agent: MiBitTorrentCliente/1.0
+Host: tracker.example.com:6969
+User-Agent: MyBitTorrentClient/1.0
 Connection: close
 ```
 
-### Parámetros de la respuesta del tracker
+### Tracker response parameters
 
-EL tracker responde con un documento `text/plain` que consiste en un diccionario bencodeado con las siguientes claves:
+The tracker responds with a `text/plain` document consisting of a bencoded dictionary with the following keys:
 
-- **failure reason :** si está presente, entonces no puede haber ninguna otra clave. EL valor es un mensjae de error legible por humanos que explica por qué falló la solicitud (string)
+- **failure reason:** if present, no other keys may be included. The value is a human-readable error message explaining why the request failed (string).
 
-- **warning message (nuevo, opcional):** Similar a failure reason, pero la respuesta aún se procesa normalmente. El mensaje de advertencia se muestra igual que un error.
+- **warning message (new, optional):** Similar to failure reason, but the response is still processed normally. The warning message is displayed like an error.
 
-- **interval :** intervalo en segundos que el cliente debe esperar entre envíos regulares de solicitud al tracker.
+- **interval:** interval in seconds that the client must wait between regular requests to the tracker.
 
-- **min interval (opcional) :** intervalo mínimo de announce. SI está presente, los clientes no deben reenviar announce con más frecuencia que este.
+- **min interval (optional):** minimum announce interval. If present, clients must not send announces more frequently than this.
 
-- **tracker id :** una cadena que el cliente debe enviar en sus próximos announces. Si está ausente y un announce previo envió un `tracker id` , no se debe descartar el valor antiguo; se debe seguir usando.
+- **tracker id:** a string that the client must send in subsequent announces. If absent and a previous announce included a `tracker id`, the old value must not be discarded; it must continue to be used.
 
-- **complete :** número de peers con el archivo completo, es decir, `seeders` (entero)
+- **complete:** number of peers with the complete file, that is, `seeders` (integer).
 
-- **incomplete :** Número de peers no-seeders (`leechers`)
+- **incomplete:** number of non-seeder peers (`leechers`).
 
-- **peers (model diccionario) :** El valor es una lista de diccionarios, cada uno con las siguientes claves :
-    - **peer id :** ID auto seleccionado del peer, como se descrbió en la solicitud al tracker (string)
-    - **ip :** dirección ip del peer , ya sea IPv6, IPv4 o nombres DNS(string)
-    - **port :** Número de puerto del peer (entero)
+- **peers (dictionary model):** the value is a list of dictionaries, each with the following keys:
+  - **peer id:** peer's self-selected ID, as described in the tracker request (string)
+  - **ip:** peer's IP address, either IPv6, IPv4, or a DNS name (string)
+  - **port:** peer's port number (integer)
 
-- **peers (modelo binario) :** En lugar de usar el modelo de diccionario descrito arriba, el valor de `peers` puede ser una cadena que consiste en múltiplos de 6 bytes. Los primeros 4 bytes son las dirección IP y los últimos 2 bytes son el número de puerto. Todo en notación de red (big endian).
+- **peers (binary model):** instead of using the dictionary model described above, `peers` may be a string consisting of multiples of 6 bytes. The first 4 bytes are the IP address and the last 2 bytes are the port number. Everything uses network byte order (big endian).
 
 
-Respuesta en modo "diccionario" (no compacta)
+Response in "dictionary" mode (non-compact)
 
 ```http
 HTTP/1.1 200 OK
@@ -568,7 +568,7 @@ d
 e
 ```
 
-Respuesta en modo "compacto" (más usado en la práctica)
+Response in "compact" mode (more commonly used in practice)
 
 ```http
 HTTP/1.1 200 OK
@@ -580,33 +580,33 @@ d8:intervali1800e8:completei12e10:incompletei34e5:peers12:\xC0\xA8\x01\xD2\x1A\x
 
 ---
 
-### Convención de Tracker Scrape
+### Tracker Scrape Convention
 
-Los `trackers` (opcional) soportan otra forma de petición , que consulta el estado de un `torrent` en particular (o de todos los `torrents`) que el tracker este gestionando. A eso se le conoce como `"la página de scrape"` porque automatiza el proceso, de otro modo tedioso, la página de estadísticas del tracker.
+`Trackers` (optionally) support another type of request that queries the status of a particular `torrent` (or all `torrents`) managed by the tracker. This is known as the `"scrape page"` because it automates the otherwise tedious process of viewing the tracker's statistics page.
 
-- Es importante para cuando debamos hacer un interfaz gráfica , consola con info detallada
-- Optimizaciones de decisiones internas (clientes más avanzados), antes de unirte a un torrent, se pregunta al tracker si vale la pena entrar, así evitas descargar un `torrent` con 0 seeders.
+- It is useful when building a graphical interface or a console with detailed information.
+- Internal decision optimizations (for more advanced clients): before joining a torrent, the client asks the tracker whether it is worth joining, avoiding a `torrent` with 0 seeders.
 
-La URL del `scrape` también se utiliza el método HTTP GET , similar al descrito anteriormente. Sin embargo, la URL base es diferente. Para obtenerla :
+The `scrape` URL also uses the HTTP GET method, similar to the one described above. However, the base URL is different. To obtain it:
 
-1. Comenzar con la URL de announce
-2. Localizar la última '/' en ella
-3. Si el texto inmediatamente después de ese '/' no es un 'announce', se considerará que el tracker no soporta la convención scrape
-4. Si sí lo es, se sustituye 'announce' por 'scrape' para obtener la URL del scrape
+1. Start with the announce URL.
+2. Locate the last '/' in it.
+3. If the text immediately after that '/' is not 'announce', the tracker is considered not to support the scrape convention.
+4. If it is, replace 'announce' with 'scrape' to obtain the scrape URL.
 
-La URL de `scrape` puede complementarse con el parámetro opcional `info_hash`, un valor de 20 bytes. Esto restringe el informe del tracker a ese torrent en particular (o de lo contrario, devuelve estadísticas de todos los torrents que el tracker gestiona, no es muy recomendable porque ocupa más carga y ancho de banda). 
+The `scrape` URL may include the optional `info_hash` parameter, a 20-byte value. This restricts the tracker's report to that particular torrent (otherwise, it returns statistics for all torrents managed by the tracker, which is not recommended because it uses more load and bandwidth).
 
-La respuesta de este método HTTP GET es un documento `text/plain` que consiste en un diccionario codificado en bencode, con las siguientes claves:
+The response to this HTTP GET method is a `text/plain` document consisting of a bencoded dictionary with the following keys:
 
-- **files:** un diccioanrio que contiene un par clave/valor por cada torrent del que existan estadísticas
-  - Cada clave es un `info_hash` binario de 20 bytes
-  - El valor asociado es otro diccionario con :
-    - **complete:** numero de pares con el archivo completo (semillas o seeders)(entero)
-    - **downloaded:** numero total de veces que el tracker registró una finalización(`event= completed`, es decir un cliente terminó de descargar el torrent)
-    - **incomplete:** numero de pares sin el archivo completo(leechers)(entero)
-    -**name(opcional):** nombre interno del torrent, especificado por el campo `name` en la sección `info` del archivo `.torrent`
+- **files:** a dictionary containing one key/value pair for each torrent with available statistics
+  - Each key is a 20-byte binary `info_hash`.
+  - The associated value is another dictionary with:
+    - **complete:** number of peers with the complete file (seeds or seeders) (integer).
+    - **downloaded:** total number of times the tracker recorded a completion (`event=completed`, meaning a client finished downloading the torrent).
+    - **incomplete:** number of peers without the complete file (leechers) (integer).
+    - **name (optional):** internal torrent name, specified by the `name` field in the `.torrent` file's `info` section.
 
-#### Respuesta del tracker al scrape
+#### Tracker response to scrape
 ```http
 HTTP/1.1 200 OK
 Content-Type: text/plain
@@ -615,183 +615,183 @@ Content-Length: 68
 d5:filesd20:....................(info_hash)d8:completei5e10:downloadedi50e10:incompletei10eeee
 ```
 
-#### Solicitud del scrape
+#### Scrape request
 
 ```http
 GET /scrape?info_hash=%12%34%56%78... HTTP/1.1
-Host: tracker.ejemplo.com:6969
+Host: tracker.example.com:6969
 ```
 
 ---
 
-## 🌐 **10.Peer Wire Protocol (TCP)**
+## 🌐 **10. Peer Wire Protocol (TCP)**
 
-- un cliente debe mantener información de estado para cada conexión que tenga con un peer remoto.
-  - **chocked:** indica si el peer remoto ha "estrangulado" a este cliente. Cuando sucede , le notifica que no responderá a solicitudes hasta que sea desestrangulado. El cliente no debe enviar solicitudes de bloques y debe considerar todas las solicitudes pendientes como descartadas por el peer remoto
-  - **interested:** indica si el peer remoto está interesado en algo que este cliente ofrece. Es una notificación de que el peer remoto empezará a pedir bloques cuando el cliente deje de estrangularlo
-  - ***am_choking:*** este cliente está estrangulando al peer (inicial = 1)
-  - ***am_interested:*** este cliente está interesaod en el peer (inicial = 0)
-  - ***peer_choking:*** peer está estrangulando al cliente (inicial = 1)
-  - ***peer_interested:*** peer está interesado en este cliente (peer_interested = 0)
-  - un bloque se **descarga** cuando el (am_interested = 1) y (peer_choking=0)
-  - un bloque se **sube** cuando el (peer_interested = 1) y (am_choking = 0)
+- a client must maintain state information for each connection it has with a remote peer.
+  - **choked:** indicates whether the remote peer has "choked" this client. When this happens, it tells the client that it will not respond to requests until it is unchoked. The client must not send block requests and must consider all pending requests discarded by the remote peer.
+  - **interested:** indicates whether the remote peer is interested in something this client offers. It notifies the client that the remote peer will start requesting blocks when the client stops choking it.
+  - ***am_choking:*** this client is choking the peer (initial = 1)
+  - ***am_interested:*** this client is interested in the peer (initial = 0)
+  - ***peer_choking:*** the peer is choking the client (initial = 1)
+  - ***peer_interested:*** the peer is interested in this client (peer_interested = 0)
+  - a block is **downloaded** when (am_interested = 1) and (peer_choking = 0)
+  - a block is **uploaded** when (peer_interested = 1) and (am_choking = 0)
 
 ### Handshake 
-> es un mensaje obligatorio y debe ser el primer mensaje transmitido por el cliente. Tiene una longitud de **(49 +  len(pstr)) bytes**.
+> It is a mandatory message and must be the first message transmitted by the client. It has a length of **(49 + len(pstr)) bytes**.
 
 ```php-template
 handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
 ```
-- **pstrlen:** longitud de la cadena `pstr` , como un bytes bruto único
-- **pstr:** identificador de cadena del protocolo
-- **reserved:** 8 bytes reservados. Todas las implementaciones actuales usan 0. Cada bit en estos bytes puede usarse para cambiar el comportameinto del protocolo
-- **info_hash:** Es el mismo `info_hash` que se transmite en las solicitudes al tracker (20 bytes)
-- **peer_id:** cadena de 20 bytes usadas como ID único del cliente (el mismo que se transmite en las solicitudes al tracker)
-- en la versión 1.0 del protcolo BitTorrent, `pstrlen=19` y `pstr="BitTorrent protocol"`
+- **pstrlen:** length of the `pstr` string, as a single raw byte
+- **pstr:** protocol string identifier
+- **reserved:** 8 reserved bytes. All current implementations use 0. Each bit in these bytes may be used to change protocol behavior.
+- **info_hash:** the same `info_hash` transmitted in tracker requests (20 bytes)
+- **peer_id:** 20-byte string used as the client's unique ID (the same one transmitted in tracker requests)
+- in version 1.0 of the BitTorrent protocol, `pstrlen=19` and `pstr="BitTorrent protocol"`
 
 
-- el iniciador de la conexión debe transmitir su `handshake` inmediatamente. EL receptor puede esperar el `handshake` del inciador si puede servir múltiples torrent simultaneamente. Sin embargo, el receptor debe responder tan pronto vea la parte `info_hash` del `handshake` (el peer id presumiblemente se enviará después de que el receptro envíe su `handshake`). La función de verificación NAT del tracker no envía el campo `peer_id` del handshake.
-- Si uyn cliente recibe un `handshake` con un `info_hash` que no está sirviendo actualmente , debe cerrar la conexión
-- Si el iniciador de la conexión recibe un `handshake` cuyo `peer_id` no coincide con el peer_id esperado , debe cerrar la conexión. Es decir se espera que el `peer_id` drecibido por el tracker coincida con el del handshake.
+- the connection initiator must transmit its `handshake` immediately. The receiver may wait for the initiator's `handshake` if it can serve multiple torrents simultaneously. However, the receiver must respond as soon as it sees the `info_hash` portion of the `handshake` (the peer ID will presumably be sent after the receiver sends its `handshake`). The tracker's NAT-checking function does not send the `peer_id` field of the handshake.
+- If a client receives a `handshake` with an `info_hash` it is not currently serving, it must close the connection.
+- If the connection initiator receives a `handshake` whose `peer_id` does not match the expected peer ID, it must close the connection. In other words, the `peer_id` received by the tracker is expected to match the one in the handshake.
 
-### Tipo de datos
-todos los enteros en el protocolo de peer por cable se codifican como valores de cuatro bytes en **big_endian**. Esto incluye el prefijo de longitud en todos los mensajes que vienen después del handshake
+### Data Types
+All integers in the peer wire protocol are encoded as four-byte values in **big-endian**. This includes the length prefix in all messages that follow the handshake.
 
-### Flujo de Mensajes
-El protocolo consiste en un handshake inicial. Despues , los peers se comunican mediante un intercambio de mensajes prefijados con su longitud. El prefijo de longitud es un entero.
+### Message Flow
+The protocol consists of an initial handshake. Afterwards, peers communicate by exchanging messages prefixed with their length. The length prefix is an integer.
 
-### Mensajes
-> Todos los mensajes restantes en el protocolo toman la forma de `<prefijo de longitud><ID de mensaje><carga útil>`. El prefijo de longitud es un valor de 4 bytes en big-endian. EL ID del mensaje es un solo byte decimal. La carga útil depende del mensaje
+### Messages
+> All remaining messages in the protocol take the form `<length prefix><message ID><payload>`. The length prefix is a 4-byte big-endian value. The message ID is a single decimal byte. The payload depends on the message.
 
-- ***keep-alive (len=0000):*** mensaje de 0 bytes, especificado con el prefijo de longitud en 0. No tiene ID de mensaje ni carga útil. Los peers pueden cerrar una conexion si no reciben mensajes (keep-alive o cualquier otro) durante un período de tiempo , por lo que se debe enviar un keep-alive para mantener la conexión viva si no se ha enviado ningún comando durante un tiempo determinado. Suele ser de 2 minutos.
+- ***keep-alive (len=0000):*** 0-byte message, specified with a length prefix of 0. It has no message ID or payload. Peers may close a connection if they do not receive messages (keep-alive or otherwise) for a period of time, so a keep-alive must be sent to keep the connection alive if no command has been sent for a while. This is usually 2 minutes.
 
-- ***choke (<len=0001><id=0>):*** el mensaje choke tiene longitud fija y no tiene carga útil
+- ***choke (<len=0001><id=0>):*** the choke message has a fixed length and no payload
 
-- ***unchoke (<len= 0001><id=1>):*** tiene longitud fija y sin carga
+- ***unchoke (<len=0001><id=1>):*** has a fixed length and no payload
 
-- ***interested (<len=0001><id=2>):*** lo mismo que los otros dos
+- ***interested (<len=0001><id=2>):*** same as the previous two
 
-- ***not interested (<len=00001><id=3>):*** lo mismo
+- ***not interested (<len=00001><id=3>):*** same
 
-- ***have (<len= 00005><id=4><piece index>):*** longitud fija. La carga útil es el índice basado en cero de un piece que acaba de ser descargado y verificado mediante hash
+- ***have (<len=00005><id=4><piece index>):*** fixed length. The payload is the zero-based index of a piece that has just been downloaded and hash-verified.
 
-- ***bitfiel (<len=0001+X><id=5><bitfield>):*** mensaje bitfiedl solo puede enviarse inmediatamente después de completar el handshake, antes de enviar cualquier otro mensaje. Es opcional y no es necesario si un cliente no tien piezas.
+- ***bitfield (<len=0001+X><id=5><bitfield>):*** the bitfield message may only be sent immediately after completing the handshake, before any other message. It is optional and is not needed if a client has no pieces.
 
-- ***request(<len=0013><id=6><begin><length>):*** mensaje tiene longitud fija y se usa para solicitar un bloque. La carga útil contiene: index(indece de la pieza), begin(desplazamiento de bytes dentro de la pieza), length(longitud solicitada)
+- ***request (<len=0013><id=6><begin><length>):*** fixed-length message used to request a block. The payload contains: index (piece index), begin (byte offset within the piece), and length (requested length).
 
-- ***piece(<len=0009+X><id=7><index><begin><block>):*** mensaje de longitud variable, donde X es la longitud del bloque. La carga útil contiene : index (indice de la pieza), begin(desplazamineto dentro de al pieza), block(datos,  subconjunto de al pieza especificada).
+- ***piece (<len=0009+X><id=7><index><begin><block>):*** variable-length message, where X is the block length. The payload contains: index (piece index), begin (offset within the piece), and block (data, a subset of the specified piece).
 
-- ***cancel(<len=0013><id=8><index><being><length>):*** longitud fija, y se usa para cancelar solicitudes de bloques. La carga útil es identifca a la del mensaje request. Se usa tipicamente durante la fase End Game.
+- ***cancel (<len=0013><id=8><index><begin><length>):*** fixed length and used to cancel block requests. The payload is identical to that of the request message. Typically used during the End Game phase.
 
-- ***port(<len=0003><id=9><listen-port>):*** mensaje port es envidado por versiones recientes de Mainline que implementar un tracker DHT. listen-port (puerto donde el nodo DHT del peer escucha), este peer debe ser insertado en la tabla de ruteo local si se soporta DHT.
+- ***port (<len=0003><id=9><listen-port>):*** the port message is sent by recent versions of Mainline that implement a DHT tracker. listen-port (the port on which the peer's DHT node listens); this peer must be inserted into the local routing table if DHT is supported.
 
 ---
 
-## 🧠 **11. Algoritmos**
+## 🧠 **11. Algorithms**
 
-Estrategias internas de los clientes BitTorrent para mejorar rendimiento y eficiencia. El protocolo base define qué mensajes se pueden enviar(interested, request, piece, ...) pero no cuándo ni cuántos mandar.
+Internal strategies used by BitTorrent clients to improve performance and efficiency. The base protocol defines which messages can be sent (interested, request, piece, ...) but not when or how many to send.
 
-### Cola (Queuing)
+### Queuing
 
-- ***Problema:*** imaginemos que cada bloque de 16 KB se decarga, y recién cuando termina uno, el cliente pide el siguiente. Eso significa esperar un round trip completo (el tiempo entre enviar solicitud y recibir el bloque). En redes con alta latencia o mucho ando de banda , ese tiempo muerto desperdicia capacidad de descarga.
+- ***Problem:*** imagine that each 16 KB block is downloaded and the client requests the next one only after it finishes. This means waiting for a full round trip (the time between sending a request and receiving the block). On networks with high latency or high bandwidth, this idle time wastes download capacity.
 
-- ***Solución:*** los clientes mantienen una cola de solicitudes pendientes ("request outstanding"). Así mientras descargan un bloque , ya tienen varios más pedidos. Cuando uno llega, el siguiente ya está en camino. Es mejor hacer 10 request en paralelo que 1 sola request, para mantener el canal lleno y aprovechar el ancho de banda. 
+- ***Solution:*** clients maintain a queue of pending requests ("request outstanding"). While downloading one block, several more have already been requested. When one arrives, the next is already on its way. Making 10 requests in parallel is better than making one request, keeping the channel full and using the available bandwidth.
 
 
 ### Super Seeding
 
-- Cuando eres el primer seed (el que tiene el archivo completo), la meta es dsitribuir piezas únicas lo más eficientemente posible. 
-- La idea es que el seed finge no tener todas las piezas y solo "anuncia" a los peers una pieza cada vez. Eso así para compartir piezas diferentes con cada peers con el objetivo de que luego entre ellos se lo intercambien. Reduce así la cnatidad total de datos que el seed necesita subir para que se genere otro seed. 
-- Solo se recomineda al sembrar un torrent nuevo (cuando es el primero)
+- When you are the first seed (the one with the complete file), the goal is to distribute unique pieces as efficiently as possible.
+- The idea is for the seed to pretend it does not have all pieces and only "announce" one piece to peers at a time. This shares different pieces with each peer so that they can later exchange them among themselves. This reduces the total amount of data the seed must upload before another seed is created.
+- Recommended only when seeding a new torrent (when you are the first seed).
 
 
-### Estrategia de descarga de piezas
+### Piece Download Strategy
 
-- Los clientes pueden elegir descargar piezas en orden aleatorio. Una estrategia mejor es descargar las peizas en orden de rareza creciente (rarest first)
-- El cliente puede determinar esto manteniendo el `bitfield` inicial de cada peer y actualizandolo con cada mensaje `have`.
-- luego puede descargar las piezas que aparezcan con menor frecuencia en esos bitfield.
-- Cualquiera estrategia rarest first debería incluir algo de aleatorización entre las piezas menos comunes, ya que si muchos clientes intentan descargar la misma pieza más rara, se producirá el efecto contrario.
+- Clients may choose to download pieces in random order. A better strategy is to download pieces in increasing order of rarity (rarest first).
+- The client can determine this by maintaining each peer's initial `bitfield` and updating it with every `have` message.
+- It can then download the pieces that appear least frequently in those bitfields.
+- Any rarest-first strategy should include some randomization among the least common pieces, because if many clients try to download the same rarest piece, the opposite effect will occur.
 
 
 ### End Game
-- Cuando una descarga está casi completa, hay una tendencia a que los últimos bloques lleguen lentamente
-- Para acelerar esto , el cliente envía solicitudes de todos los bloques faltantes a todos sus peers.
-- Para evitar que esto se vuelva ineficiente , el cliente también envía un mensaje cancel a todos los demás cada vez que llega un bloque.
+- When a download is nearly complete, the last blocks tend to arrive slowly.
+- To speed this up, the client sends requests for all missing blocks to all its peers.
+- To prevent this from becoming inefficient, the client also sends a cancel message to all others whenever a block arrives.
 
-[overhead del protocolo](http://hal.inria.fr/inria-00000156/en)
+[protocol overhead](http://hal.inria.fr/inria-00000156/en)
 
-### Choking y Optimistic unchoking
+### Choking and Optimistic Unchoking
 
-- El protocolo usa `choking` para controlar con quién subes datos. No puedes subir a todos a la vez sin romper TCP, así que subes solo a algunos. 
-- La regla básica es : cada 10 seg, eliges 4 peers que te suben más rápido (unchokeas). los demás bloqueas sus solicitudes. Así implementar un tit-for-tat "tu me das velocidad , yo te doy velocidad"
-- la versión optimizada es cada 30seg eliges uno al azar (aunque no te esté dadno nada) para probar si podría ser mejor que tus actaules 4. Si resulta ser rápido, entra en el grupo y otro sale.
+- The protocol uses `choking` to control who you upload data to. You cannot upload to everyone at once without overwhelming TCP, so you upload only to some peers.
+- The basic rule is: every 10 seconds, choose the 4 peers uploading to you the fastest (unchoke them). Block requests from the others. This implements tit-for-tat: "you give me speed, I give you speed."
+- The optimized version chooses one peer at random every 30 seconds (even if it is not sending anything) to test whether it could be better than the current 4. If it is fast, it joins the group and another peer leaves.
 
 
-### Anti-snubbing
-- A veces un peer deja de enviarte piezas (te ignora)
-- Si pasa más de 1 min sin recibir datos, el cliente lo marca como "snubbed" y deja de subirle, salvo en el caso de `optimistic unchoke`
-- EL objetivo es evitar perder tiepo con peers que no colaboran.
+### Anti-Snubbing
+- Sometimes a peer stops sending you pieces (it ignores you).
+- If more than 1 minute passes without receiving data, the client marks it as "snubbed" and stops uploading to it, except in the case of `optimistic unchoke`.
+- The goal is to avoid wasting time with peers that do not cooperate.
 
 ---
 
-## 🛠️ **12. Extensiones oficiales del protocolo**
+## 🛠️ **12. Official Protocol Extensions**
 
-### Extensiones Fast Peers
-- bit reservado : el tercer bit menos significativo del 8° byte reservado `reserved[7] |= 0x04`
-- esto permite acelerar el arranque de un peer nuevo en el swarm (la rede de pares compartiendo un torrent).
-- Normalmente , si un peer esta choked, no puede pedir piezas
-- Con esta extensión , ciertos peers pueden descargar piezas específicas aunque estén choked, lo que acelera el sincronización inicial
+### Fast Peer Extensions
+- reserved bit: the third least significant bit of the 8th reserved byte `reserved[7] |= 0x04`
+- this speeds up the startup of a new peer in the swarm (the network of peers sharing a torrent).
+- Normally, if a peer is choked, it cannot request pieces.
+- With this extension, certain peers can download specific pieces while choked, accelerating initial synchronization.
 
 ### DHT
-- bit reserado `reserved[7] |= 0x01` (último bir del octavo byte).
-- permite descubir peers sin necesidad de un tracker centralizado. Cada peer se convierte en un nodo de una red DHT, donde se guarda información sobre qué oeers tiene qué torrents.
-- el sistema sigue funcionando si el tracker cae
-- los peers se buscan entre sí usanod una table hash distribuida (basada en kademlia)
-- BEP-32 agrega soporte para IPV6
+- reserved bit `reserved[7] |= 0x01` (last bit of the eighth byte).
+- allows peers to be discovered without a centralized tracker. Each peer becomes a node in a DHT network, which stores information about which peers have which torrents.
+- the system continues to work if the tracker goes down
+- peers find one another using a distributed hash table (based on Kademlia)
+- BEP-32 adds IPv6 support
 
-### Connection Obfuscation( Message Stream Encryption- MSE)
+### Connection Obfuscation (Message Stream Encryption - MSE)
 
-- no tiene bit reservado específico
-- permite cifrar o camuflar las conexiones BitTorrent para evitar que los proveedores de internet, detecten o limiten el trafico torrent. 
-- ofusca el handsahke y los mensajes del protocolo
-- ayuda a evadir el trafic shapping o throttling
-- mejora la privacidad
+- has no specific reserved bit
+- allows BitTorrent connections to be encrypted or disguised so internet providers do not detect or limit torrent traffic.
+- obfuscates the handshake and protocol messages
+- helps evade traffic shaping or throttling
+- improves privacy
 
-### WebSeeding
-- no usa bit reservado
-- permite que un servidor HTTP actúe como seed(fuente de datos), además de los peers normales
-- en resumen, pueeds descargar partes del torrent desde un servidor web, no solo de otros usuarios
+### Web Seeding
+- does not use a reserved bit
+- allows an HTTP server to act as a seed (data source), in addition to regular peers
+- in short, you can download parts of the torrent from a web server, not only from other users
 
-### Extension Protocol 
-- bit reservado `reserved[5] = 0x10` 8caurto bit mas signficativo del sexto byte
-- define una forma genérica para anuciar y negociar extensiones entre cliente
-- cada extensión adicional (por ejemplo DHT, metadata exchange, peer exchange) se anuncia y negocia mediante este protocolo
+### Extension Protocol
+- reserved bit `reserved[5] = 0x10`, the 4th most significant bit of the sixth byte
+- defines a generic way to announce and negotiate extensions between clients
+- each additional extension (for example DHT, metadata exchange, peer exchange) is announced and negotiated through this protocol
 
-### Extensión negotiation protocol
-- bite servado el 47 y 48
-- permite decidir que extensio usar si ambos peers soportan varias.
-- evita conflictos cuando dos cliete implementan diferentes sistema de extensión.
+### Extension Negotiation Protocol
+- reserved bits 47 and 48
+- allows peers to decide which extension to use when both support several.
+- avoids conflicts when two clients implement different extension systems.
 
-### Bittorrent location aware-protocol
-- bit reservado: 21
-- permite que los peers tomen en cuanta la ubicación geográfica de otros peers. De esa forma pueden prefierir descargar de peers más cercanos, reduciendo latencia y carga de red
+### BitTorrent Location-Aware Protocol
+- reserved bit: 21
+- allows peers to take other peers' geographic location into account. They can then prefer downloading from nearby peers, reducing latency and network load.
 
-### SimpleBT extension protoc0l
-- bit reservado primer byte `0x01`
-- agrega intercambio de informacion de peers y estadísticas de conexión.
-- fue usado en versiones antiguas de SImpleBot
+### SimpleBT Extension Protocol
+- reserved bit in the first byte `0x01`
+- adds peer information and connection-statistics exchange.
+- was used in older versions of SimpleBot
 
 ### BitComet Extension Protocol
-- bit reservado primeros dos bytes `ex`
-- usado para intecambir informacion adicional(autenticacipon, estadísticas, mensaje del chat)
-- no está docuemntado oficialmente, se conoce por ingeniería inversa
+- reserved bit in the first two bytes `ex`
+- used to exchange additional information (authentication, statistics, chat messages)
+- not officially documented; it is known through reverse engineering
 
 ---
 
-## 📚 **13. Referencias**
+## 📚 **13. References**
 
 - Peer Exchange (PEX) : https://www.bittorrent.org/beps/bep_0011.html
 - DHT Protocol : https://www.bittorrent.org/beps/bep_0005.html
-- Wiki de BitTorrent: https://wiki.theory.org/BitTorrentSpecification
+- BitTorrent Wiki: https://wiki.theory.org/BitTorrentSpecification
 
 ---

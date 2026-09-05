@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+.git/
+.gitignore
+
+# Archivos de entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Builds
+dist/
+build/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+.dockerignore
